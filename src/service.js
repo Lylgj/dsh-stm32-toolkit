@@ -155,6 +155,13 @@ export class Stm32Service extends EventEmitter {
     this.emit('log', entry);
   }
 
+  /** Drop the console history (the panel's 清除日志 button). */
+  clearLogs() {
+    this.logs = [];
+    this.emit('clear-logs');
+    return { ok: true };
+  }
+
   // ------------------------------------------------------------ toolchain
 
   async getToolchain(force = false) {

@@ -132,6 +132,9 @@ async function handleRequest(req, res, service) {
 
 async function handleAction(action, body, service, res) {
   switch (action) {
+    case 'clearLogs': {
+      return sendJson(res, 200, service.clearLogs());
+    }
     case 'config': {
       if (body.patch && typeof body.patch === 'object') {
         const config = service.saveConfig(body.patch);

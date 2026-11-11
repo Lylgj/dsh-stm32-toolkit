@@ -313,14 +313,29 @@ window.__ModuleLoader__.load({
 
     // ---------------------------------------------------------- console
 
-    function ConsoleTab({ state }) {
+    function ConsoleTab({ state, run }) {
       const ref = useRef(null);
       const logs = state?.logs ?? [];
+      const [clearing, setClearing] = useState(false);
       useEffect(() => {
         if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
       }, [logs.length]);
+      const clear = useCallback(async () => {
+        setClearing(true);
+        try {
+          await run('clearLogs');
+        } catch {
+          /* 下一轮轮询会刷新 */
+        } finally {
+          setClearing(false);
+        }
+      }, [run]);
       const errors = state?.lastBuild?.errors ?? [];
       return h('div', null, [
+        h('div', { className: 'stm32-row', style: { justifyContent: 'space-between', marginBottom: 6 }, key: 'head' }, [
+          h('span', { className: 'stm32-muted' }, logs.length ? `${logs.length} 行日志` : '暂无日志'),
+          h('button', { className: 'stm32-btn', onClick: clear, disabled: clearing || logs.length === 0 }, '清除日志'),
+        ]),
         errors.length > 0
           ? h('div', { className: 'stm32-card', style: { marginBottom: 8 }, key: 'errs' }, [
             h('div', { className: 'stm32-card-head' }, [
@@ -851,7 +866,7 @@ window.__ModuleLoader__.load({
       const project = state?.project;
 
       let body;
-      if (tab === 'console') body = h(ConsoleTab, { state });
+      if (tab === 'console') body = h(ConsoleTab, { state, run });
       else if (tab === 'registers') body = h(RegistersTab, { state, run, disabled: !active });
       else if (tab === 'memory') body = h(MemoryTab, { state, run, disabled: !active });
       else if (tab === 'breakpoints') body = h(BreakpointsTab, { state, run, disabled: !active });
