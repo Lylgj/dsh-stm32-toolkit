@@ -11,7 +11,7 @@
  */
 
 import { readFileSync, rmSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, delimiter } from 'node:path';
 import { ensureDir, fileExists, run, stamp } from '../util.js';
 import { exportKeilToCmake } from './export.js';
 import { findArtifact } from './project.js';
@@ -168,12 +168,32 @@ async function buildWithKeil(projectInfo, config, options, logFile, startedAt) {
   };
 }
 
+/**
+ * CMake writes compile rules with the bare executable name
+ * (`arm-none-eabi-gcc`), so the bin directories must be on PATH during the
+ * build step — the user may point us at an .exe that is not on PATH.
+ */
+function buildEnv(config) {
+  const env = { ...process.env };
+  const dirs = [
+    config.gccPath && dirname(config.gccPath),
+    config.ninjaPath && dirname(config.ninjaPath),
+    config.openocdPath && dirname(config.openocdPath),
+  ].filter(Boolean);
+  if (dirs.length) env.PATH = [...new Set(dirs), env.PATH ?? ''].join(delimiter);
+  return env;
+}
+
 function compilerOverrides(config) {
   const gcc = config.gccPath;
   if (!gcc) return [];
   const dir = dirname(gcc);
   const exe = (name) => join(dir, process.platform === 'win32' ? `${name}.exe` : name);
   return [
+    // Bare-metal target: without these CMake treats the compiler as a native
+    // Windows one and tries to link against kernel32/user32 etc.
+    '-DCMAKE_SYSTEM_NAME=Generic',
+    '-DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY',
     `-DCMAKE_C_COMPILER=${gcc}`,
     `-DCMAKE_CXX_COMPILER=${exe('arm-none-eabi-g++')}`,
     `-DCMAKE_ASM_COMPILER=${gcc}`,
@@ -195,6 +215,7 @@ async function buildWithCMake(projectInfo, config, options, logFile, startedAt) 
   const buildDir = config.buildDir || projectInfo.buildDir || join(root, 'build');
   ensureDir(buildDir);
   const cacheFile = join(buildDir, 'CMakeCache.txt');
+  const env = buildEnv(config);
   let command = '';
   if (options.clean) {
     try { rmSync(buildDir, { recursive: true, force: true }); } catch { /* ignore */ }
@@ -203,11 +224,12 @@ async function buildWithCMake(projectInfo, config, options, logFile, startedAt) 
   if (!fileExists(cacheFile)) {
     const generator = ninja ? 'Ninja' : (process.platform === 'win32' ? 'MinGW Makefiles' : 'Unix Makefiles');
     const configureArgs = ['-S', root, '-B', buildDir, '-G', generator];
+    if (ninja) configureArgs.push(`-DCMAKE_MAKE_PROGRAM=${ninja}`);
     if (config.cmakeToolchainFile) configureArgs.push(`-DCMAKE_TOOLCHAIN_FILE=${config.cmakeToolchainFile}`);
     if (config.cmakeBuildType) configureArgs.push(`-DCMAKE_BUILD_TYPE=${config.cmakeBuildType}`);
     configureArgs.push(...compilerOverrides(config));
     (config.cmakeExtraArgs ?? []).forEach((a) => configureArgs.push(a));
-    const configure = await run(cmake, configureArgs, { timeoutMs: 5 * 60 * 1000 });
+    const configure = await run(cmake, configureArgs, { timeoutMs: 5 * 60 * 1000, env });
     command = configure.command;
     if (!configure.ok) {
       return {
@@ -226,7 +248,7 @@ async function buildWithCMake(projectInfo, config, options, logFile, startedAt) 
   }
   if (!make && !ninja) throw new Error('未找到 make/ninja，无法执行 CMake 构建。');
   const buildArgs = ['--build', buildDir, '--parallel'];
-  const build = await run(cmake, buildArgs, { timeoutMs: config.buildTimeoutMs ?? 20 * 60 * 1000 });
+  const build = await run(cmake, buildArgs, { timeoutMs: config.buildTimeoutMs ?? 20 * 60 * 1000, env });
   command = build.command;
   const log = `${build.stdout}\n${build.stderr}`;
   const { errors, warnings } = parseGccLog(log);

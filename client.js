@@ -1332,6 +1332,7 @@ window.__ModuleLoader__.load({
           field('openocdScripts', 'OpenOCD scripts', '可选，对应 -s 参数目录', 'interface/ 与 target/ 配置文件所在目录；留空从 OpenOCD 安装位置推断。'),
           field('gdbPath', 'arm-none-eabi-gdb', '自动从 PATH 查找', '调试会话使用 GDB/MI 协议；留空自动探测。'),
           field('gccPath', 'arm-none-eabi-gcc', '自动从 PATH 查找', '开源工具链构建时使用；Keil 构建不需要。'),
+          field('ninjaPath', 'Ninja / Make', '自动从 PATH 查找', 'CMake 生成构建文件后调用的构建工具；填 ninja.exe，留空会自动探测。'),
         ]),
         section('调试器', [
           h('div', { className: 'stm32-set-row', key: 'probe' }, [

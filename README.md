@@ -47,6 +47,7 @@ DeepSeek Harness 的 STM32 开发插件。参照 Keil MDK 的工作方式，把�
 | `svdPath` | SVD 文件；留空自动在 Keil Pack / 缓存 / 网络查找 |
 | `backend` | `auto` / `keil` / `gcc` |
 | `uv4Path` / `openocdPath` / `gdbPath` / `gccPath` | 手动指定可执行文件（一般留空自动探测） |
+| `ninjaPath` / `cmakePath` | 手动指定 Ninja / CMake（一般留空自动探测） |
 | `probe` | `stlink` / `cmsis-dap` / `jlink` |
 | `interfaceCfg` / `targetCfg` | OpenOCD 配置；留空按芯片和调试器自动推荐 |
 | `adapterSpeed` / `gdbPort` | SWD 速度（kHz）/ GDB Server 端口 |
@@ -154,13 +155,13 @@ client.js           Web 工作台与设置页（React，无构建步骤）
 - 真实 Keil 工程 `D:\lgj\mcu_acc_app\MDK-ARM\Project.uvprojx` 解析通过：STM32F407VGTx / STM324xG_EVAL / 152 个源文件 / IROM 0x08000000 1MB / IRAM 0x20000000 128KB。
 - 同一工程导出 CMake 通过：150 个可编译源文件、18 个 include、3 个宏；Keil 汇编启动文件被 GNU 启动文件替换，FreeRTOS 的 RVDS 移植层自动换成 GCC 版本。
 - 真实 SVD 下载并解析通过：`STM32F407.svd` 91 个外设，GPIOA 0x40020000，MODER 16 个位域。
+- **真实 GCC 编译通过**：手动安装 xPack arm-none-eabi-gcc 15.2.1 + ninja 1.13.2 后，`createIoc` 生成的 `demo_project` 编译成功（text 588 B）；真实 Keil 工程 `D:\lgj\mcu_acc_app` 自动导出 CMake 后编译成功，产物 `.elf/.hex/.bin`，`text 212620 data 580 bss 117608`，链接错误 0。导出时自动补齐 CMSIS 头目录、替换 RVDS→GCC 移植层、放宽 AC5 风格告警（`-Wno-int-conversion` 等）。
 - 在独立 smoke profile 中真实启动 DSH Web 实例验证：状态快照含 `rtt/install/cores`；`GET /api/stm32/{env,symbols,pins,ioc,rtt}` 正常；真实 HAL 工程扫描出 22 个引脚；`POST projectCreate` 生成 6 个文件的 CMake 工程；`POST envInstall` 能下载并安装 xPack 工具链。
 - 未接探针时 `debugStart`/`flash` 会明确提示“没有找到调试器 / 找不到固件”，不会假装成功。
 
 **未验证**（本机没有相应环境，插件会在界面上如实报错，不会假装成功）：
 
-- Keil UV4 实际编译：本机未安装 Keil；
-- GCC 实际编译：本机网络到 GitHub Release 不稳定（约 30–50 KB/s 甚至连不上），xPack 包（约 320MB）下载没有完成，所以还没有真正跑过 `arm-none-eabi-gcc` 编译；Keil→CMake 导出和生成的 CMakeLists/linker 已做结构和内容校验，CMake 找不到编译器时插件会明确报「CMake 配置失败」并附原始日志；
+- Keil UV4 实际编译：本机未安装 Keil（已用 GCC 后端完成真实编译，见上）；
 - OpenOCD 实际下载、GDB 调试：没有连接 ST-Link/CMSIS-DAP；
 - 实际硬件断点 / 寄存器读值、RTT 真实输出。
 
@@ -175,6 +176,8 @@ client.js           Web 工作台与设置页（React，无构建步骤）
 - 下载有 90 秒无数据看门狗，避免网络卡住时无限挂起；
 - 解压到 `%DSH_HOME%\stm32\tools\<component>`，自动写回 `gccPath` / `gdbPath` / `openocdPath` / `openocdScripts`；
 - 当前内置版本：xPack arm-none-eabi-gcc `15.2.1-1.1`、OpenOCD `0.12.0-7`。
+
+网络不好时也可以手动装：下载 `xpack-arm-none-eabi-gcc-15.2.1-1.1-win32-x64.zip` 解压到 `%DSH_HOME%\stm32\tools\gcc\`，再把 `gccPath` 指向 `bin\arm-none-eabi-gcc.exe`；CMake 构建还需要 Ninja 或 make（Windows 上推荐 `ninja.exe`，填 `ninjaPath`），否则会报 `CMake was unable to find a build program`。
 
 ## 路线图
 

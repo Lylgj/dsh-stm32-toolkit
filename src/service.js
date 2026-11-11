@@ -50,6 +50,7 @@ const DEFAULTS = {
   gdbPath: '',
   makePath: '',
   cmakePath: '',
+  ninjaPath: '',
   cubeProgrammerPath: '',
   probe: 'stlink',
   interfaceCfg: '',
@@ -117,7 +118,7 @@ export class Stm32Service extends EventEmitter {
     const next = { ...this.config, ...patch, version: CONFIG_VERSION };
     // Paths typed by hand may contain %VARS% or ~.
     for (const key of ['projectDir', 'uvprojx', 'svdPath', 'uv4Path', 'openocdPath', 'openocdScripts',
-      'gccPath', 'gdbPath', 'makePath', 'cmakePath', 'cubeProgrammerPath', 'symbolFile', 'iocFile']) {
+      'gccPath', 'gdbPath', 'makePath', 'cmakePath', 'ninjaPath', 'cubeProgrammerPath', 'symbolFile', 'iocFile']) {
       if (typeof next[key] === 'string' && next[key]) next[key] = resolvePathLike(next[key]);
     }
     this.config = next;
@@ -168,6 +169,7 @@ export class Stm32Service extends EventEmitter {
     if (!this.config.gccPath && gcc.gcc) this.config.gccPath = gcc.gcc;
     if (!this.config.makePath && gcc.make) this.config.makePath = gcc.make;
     if (!this.config.cmakePath && gcc.cmake) this.config.cmakePath = gcc.cmake;
+    if (!this.config.ninjaPath && gcc.ninja) this.config.ninjaPath = gcc.ninja;
     this.refreshDebugConfig();
     return this.toolchain;
   }

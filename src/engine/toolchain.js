@@ -7,7 +7,7 @@
  */
 
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { dirExists, fileExists, run, which } from '../util.js';
 
 const KEIL_ROOTS = () => {
@@ -55,7 +55,14 @@ export function findKeilPackRoot(configuredPath) {
 
 /** arm-none-eabi toolchain executables. */
 export function findGccTools(configured = {}) {
-  const extraDirs = [configured.gccBinDir, configured.toolchainBinDir].filter(Boolean);
+  // Also look next to the configured gcc/gdb: one-click installs and manual
+  // unzips usually keep objcopy/size/nm/ninja in the same bin directory.
+  const extraDirs = [
+    configured.gccBinDir,
+    configured.toolchainBinDir,
+    configured.gccPath && dirname(configured.gccPath),
+    configured.gdbPath && dirname(configured.gdbPath),
+  ].filter(Boolean);
   return {
     gcc: configured.gccPath || which('arm-none-eabi-gcc', extraDirs),
     gdb: configured.gdbPath || which('arm-none-eabi-gdb', extraDirs),
@@ -64,7 +71,7 @@ export function findGccTools(configured = {}) {
     nm: which('arm-none-eabi-nm', extraDirs),
     make: configured.makePath || which('make', extraDirs) || which('mingw32-make', extraDirs) || which('gmake', extraDirs),
     cmake: configured.cmakePath || which('cmake', extraDirs),
-    ninja: which('ninja', extraDirs),
+    ninja: configured.ninjaPath || which('ninja', extraDirs),
   };
 }
 
