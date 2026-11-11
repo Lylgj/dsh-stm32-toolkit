@@ -1,0 +1,56 @@
+{
+  "name": "dsh-stm32-toolkit",
+  "version": "0.1.0",
+  "description": "STM32 IDE for DeepSeek Harness: build, flash, debug, breakpoints, core/peripheral registers, memory and disassembly. Works with Keil MDK (UV4) and the open-source arm-none-eabi + CMake/Make + OpenOCD + GDB toolchain.",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek",
+    "stm32",
+    "embedded",
+    "keil",
+    "openocd",
+    "gdb",
+    "debugger"
+  ],
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./client.js",
+    "./engine/*": "./src/engine/*.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "client.js",
+    "cordis.patch.yml",
+    "dsh.plugin.json",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": ">=0.1.0-rc.7"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": false,
+      "inject": []
+    }
+  },
+  "license": "MIT"
+}

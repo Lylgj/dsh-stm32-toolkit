@@ -1,0 +1,15 @@
+# dependencies
+node_modules/
+
+# generated / downloaded artifacts
+logs/
+svd/
+*.log
+build/
+.dsh-gcc/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
