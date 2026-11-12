@@ -139,6 +139,10 @@ window.__ModuleLoader__.load({
       .stm32-settings-embed .stm32-set-row { grid-template-columns:132px minmax(0,1fr); gap:8px 12px; padding:7px 0; }
       .stm32-set-head h2 { margin:0 0 3px; font-size:15px; font-weight:600; letter-spacing:.01em; }
       .stm32-set-head p { margin:0; opacity:.6; font-size:12px; line-height:1.5; }
+      .stm32-set-nav { display:flex; flex-wrap:wrap; gap:6px; padding:2px 0; }
+      .stm32-set-navitem { border:1px solid rgba(128,128,128,.25); background:transparent; color:inherit;
+        opacity:.75; border-radius:999px; padding:3px 10px; font-size:11.5px; cursor:pointer; line-height:1.6; }
+      .stm32-set-navitem:hover { opacity:1; background:rgba(128,128,128,.08); }
       .stm32-set-card { border:1px solid rgba(128,128,128,.22); border-radius:10px;
         background:rgba(128,128,128,.04); overflow:hidden; }
       .stm32-set-card-title { padding:11px 16px 9px; font-size:12.5px; font-weight:600;
@@ -1381,16 +1385,31 @@ window.__ModuleLoader__.load({
           ]),
         ]),
       ]);
-      const section = (title, rows) => h('section', { className: 'stm32-set-card', key: title }, [
+      const section = (title, rows, id) => h('section', {
+        className: 'stm32-set-card',
+        key: title,
+        id: id ? `stm32-set-${id}` : undefined,
+      }, [
         h('div', { className: 'stm32-set-card-title' }, title),
         h('div', { className: 'stm32-set-card-body' }, rows),
       ]);
+
+      const SET_SECTIONS = [
+        ['project', '工程'], ['toolchain', '工具链'], ['debug', '调试器'], ['flash', '下载'],
+        ['serial', '串口'], ['rtt', 'RTT'], ['symbols', '符号与引脚'], ['multi', '多核'],
+      ];
+      const jumpTo = (id) => {
+        const element = typeof document === 'undefined' ? null : document.getElementById(`stm32-set-${id}`);
+        if (element && typeof element.scrollIntoView === 'function') element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      };
 
       return h('div', { className: `stm32-settings${embedded ? ' stm32-settings-embed' : ''}` }, [
         h('div', { className: 'stm32-set-head' }, [
           h('h2', null, 'STM32 工具链'),
           h('p', null, '配置项目目录、编译器与调试器路径；留空的项会自动探测。修改后点“保存”，面板与工具会立刻生效。'),
         ]),
+        embedded ? h('nav', { className: 'stm32-set-nav', key: 'nav' }, SET_SECTIONS.map(([id, label]) =>
+          h('button', { key: id, type: 'button', className: 'stm32-set-navitem', onClick: () => jumpTo(id) }, label))) : null,
         section('工程', [
           field('projectDir', '工程目录', 'D:\\path\\to\\project', '留空则使用当前会话目录；支持 Keil .uvprojx、CMake、Makefile 工程。', { mode: 'dir', title: '选择工程目录' }),
           field('device', '芯片型号', 'STM32F407VGTx', '留空则从 .uvprojx 自动读取，用于匹配 OpenOCD target 与 SVD。'),
@@ -1404,7 +1423,7 @@ window.__ModuleLoader__.load({
                 '把 Keil .uvprojx 的源文件、include、宏定义导出到 <工程>/.dsh-gcc（用 GNU 启动文件替换 Keil 汇编启动文件）。没装 Keil 时点“编译”会自动走这条路。'),
             ]),
           ]),
-        ]),
+        ], 'project'),
         section('工具链', [
           field('uv4Path', 'Keil UV4', 'C:\\Keil_v5\\UV4\\UV4.exe', '使用 Keil/AC5 工程构建时需要；纯开源工具链可留空。', { mode: 'file', exts: ['.exe'], title: '选择 UV4.exe' }),
           field('openocdPath', 'OpenOCD', 'C:\\...\\bin\\openocd.exe', '下载与调试都通过它连接 ST-Link / CMSIS-DAP / J-Link。', { mode: 'file', exts: ['.exe'], title: '选择 openocd.exe' }),
@@ -1412,7 +1431,7 @@ window.__ModuleLoader__.load({
           field('gdbPath', 'arm-none-eabi-gdb', '自动从 PATH 查找', '调试会话使用 GDB/MI 协议；留空自动探测。', { mode: 'file', exts: ['.exe'], title: '选择 arm-none-eabi-gdb.exe' }),
           field('gccPath', 'arm-none-eabi-gcc', '自动从 PATH 查找', '开源工具链构建时使用；Keil 构建不需要。', { mode: 'file', exts: ['.exe'], title: '选择 arm-none-eabi-gcc.exe' }),
           field('ninjaPath', 'Ninja / Make', '自动从 PATH 查找', 'CMake 生成构建文件后调用的构建工具；填 ninja.exe，留空会自动探测。', { mode: 'file', exts: ['.exe'], title: '选择 ninja.exe' }),
-        ]),
+        ], 'toolchain'),
         section('调试器', [
           h('div', { className: 'stm32-set-row', key: 'probe' }, [
             h('div', { className: 'stm32-set-label' }, '类型'),
@@ -1438,7 +1457,7 @@ window.__ModuleLoader__.load({
               ]),
             ]),
           ]),
-        ]),
+        ], 'debug'),
         section('下载', [
           selectRow('flashErase', '擦除方式', [
             { value: 'none', label: '按扇区擦除（默认）' },
@@ -1446,7 +1465,7 @@ window.__ModuleLoader__.load({
           ], '整片擦除会清空芯片全部 Flash 内容，请确认后再用。'),
           checkRow('flashVerify', '校验', '下载后校验 Flash 内容'),
           checkRow('flashReset', '复位', '下载完成后复位并运行'),
-        ]),
+        ], 'flash'),
         section('串口', [
           h('div', { className: 'stm32-set-row', key: 'serialPort' }, [
             h('div', { className: 'stm32-set-label' }, '默认串口'),
@@ -1469,21 +1488,21 @@ window.__ModuleLoader__.load({
             ]),
           ]),
           field('serialBaud', '默认波特率', '115200', '串口面板打开时的默认波特率。'),
-        ]),
+        ], 'serial'),
         section('RTT 日志', [
           field('rttPort', 'RTT 端口', '9090', 'OpenOCD 为 RTT 打开的 TCP 端口，面板通过它读取日志。'),
           field('rttChannel', 'RTT 通道', '0', '默认读取 channel 0。'),
-        ]),
+        ], 'rtt'),
         section('符号与引脚', [
           field('symbolFile', '符号表文件', '可选：.map / .elf', '留空则自动在工程目录里找 .map / .elf，用于符号查找与引脚图。', { mode: 'file', exts: ['.map', '.elf', '.axf'], title: '选择符号表 / ELF' }),
           field('iocFile', 'CubeMX .ioc', '可选：工程 .ioc 文件', '留空则自动在工程目录里找；引脚图会合并 .ioc 与源码中的配置。', { mode: 'file', exts: ['.ioc'], title: '选择 .ioc 文件' }),
-        ]),
+        ], 'symbols'),
         section('多核', [
           selectRow('core', '目标内核', [
             { value: '0', label: 'core0（Cortex-M7 / 主核）' },
             { value: '1', label: 'core1（Cortex-M4 / 从核）' },
           ], '仅 H7 等双核器件有效；OpenOCD 一次连接一个核，core1 需要单独启动调试。'),
-        ]),
+        ], 'multi'),
         env ? h('section', { className: 'stm32-set-card', key: 'env' }, [
           h('div', { className: 'stm32-set-card-title' }, '工具链安装'),
           h('div', { className: 'stm32-set-card-body' }, [
@@ -1556,23 +1575,14 @@ window.__ModuleLoader__.load({
       } catch (error) {
         console.error('[dsh-stm32-toolkit] 注册工作台面板失败', error);
       }
-
-      try {
-        ctx.slots.inject('settings.section', () => ctx.slots.register({
-          name: 'settings.section',
-          id: 'stm32',
-          order: 44,
-          label: () => 'STM32',
-        }, SettingsPage));
-      } catch (error) {
-        console.error('[dsh-stm32-toolkit] 注册设置页失败', error);
-      }
     }
 
     module.exports = {
       name: 'dsh-stm32-toolkit',
       inject: ['slots', 'locale'],
       apply,
+      // Exposed for the render smoke tests; not part of the plugin API.
+      __components: { Workbench, SettingsPage },
     };
     return module.exports;
   },

@@ -29,7 +29,7 @@ DeepSeek Harness 的 STM32 开发插件。参照 Keil MDK 的工作方式，把�
 装完 **重启 DeepSeek Harness 桌面应用**（desktop profile 由 Electron 独占，运行中无法热加载 host 插件）。重启后：
 
 - 左侧栏出现 **STM32** 图标 → 打开工作台；
-- 设置里出现 **STM32** 页；
+- 工作台里的「设置」标签页可配置工程与工具链（不再单独占用“设置”窗口）；
 - 对话里可用 `stm32_*` 工具和 `/stm32` 命令。
 
 开发调试时，也可以直接把 `src/`、`client.js`、`package.json`、`dsh.plugin.json`、`cordis.patch.yml` 复制到
@@ -37,7 +37,7 @@ DeepSeek Harness 的 STM32 开发插件。参照 Keil MDK 的工作方式，把�
 
 ## 首次配置
 
-打开**侧边栏 STM32 工作台 → 设置标签页**（或 设置 → STM32），也可以让 Agent 调用 `stm32_config`，或用 `/stm32`：
+打开**侧边栏 STM32 工作台 → 设置标签页**，也可以让 Agent 调用 `stm32_config`，或用 `/stm32`：
 
 | 配置项 | 说明 |
 | --- | --- |
@@ -119,7 +119,7 @@ DeepSeek Harness 的 STM32 开发插件。参照 Keil MDK 的工作方式，把�
 - **RTT**：开启后实时显示 SEGGER RTT 通道输出，可直接发送文本。
 - **符号**：按名字搜索符号、按地址找最近符号，显示源码位置。
 - **引脚**：静态扫描工程源码生成的引脚占用表（支持 `#define` 引脚宏与静态引脚表），可按端口过滤。
-- **设置**：工程目录、芯片、工具链路径、调试器与串口参数直接内嵌在工作台里，保存后立即生效。
+- **设置**：工程目录、芯片、工具链路径、调试器、擦除/校验/复位、串口、RTT、符号与多核参数全部内嵌在工作台「设置」标签页里（顶部有分区快捷导航），保存后立即生效；DSH 自己的“设置”窗口里不再单独出现 STM32 页。
 - 状态栏显示芯片、目标、后端、调试状态、当前停止位置、固件文件和环境检测结果。
 
 ## 工作原理
@@ -144,7 +144,7 @@ src/engine/symbols.js   Keil/GNU map、nm、ELF 符号表解析
 src/engine/ioc.js       CubeMX .ioc 解析/修改与 CMake 工程骨架生成
 src/engine/pins.js      源码静态扫描生成引脚图
 src/engine/rtt.js       OpenOCD RTT + TCP 流
-client.js           Web 工作台与设置页（React，无构建步骤）
+client.js           Web 工作台与内嵌设置页（React，无构建步骤）
 ```
 
 插件 host 侧只依赖 Node 内置模块；client 侧只 `require('react')`。
@@ -169,7 +169,7 @@ client.js           Web 工作台与设置页（React，无构建步骤）
 
 ## 一键安装工具链
 
-设置页「工具链」卡片里的 **下载并安装工具链**，或 Agent 工具 `stm32_env`（`action:'install'`，可选 `gcc` / `openocd` / `all`）：
+工作台 → 设置 → 工具链卡片里的 **下载并安装工具链**，或 Agent 工具 `stm32_env`（`action:'install'`，可选 `gcc` / `openocd` / `all`）：
 
 - 优先走 GitHub API 取最新 Release；API 不可用时从 `releases/latest` 发布页解析；再不行用内置地址；
 - GitHub 直连失败会自动再试 `https://ghproxy.net/` 镜像；
@@ -189,14 +189,14 @@ client.js           Web 工作台与设置页（React，无构建步骤）
 ## 已知限制
 
 - AC5 专用工程（例如依赖 ARMCC 内建/分散加载）不能直接用 GCC 构建；这类工程请保留 Keil 后端。
-- 调试需要 `arm-none-eabi-gdb`（或 `gdb-multiarch`）与 OpenOCD；插件会自动找 PATH、`%ProgramFiles%`、`%LOCALAPPDATA%\Programs`，也可以用设置页一键安装。
+- 调试需要 `arm-none-eabi-gdb`（或 `gdb-multiarch`）与 OpenOCD；插件会自动找 PATH、`%ProgramFiles%`、`%LOCALAPPDATA%\Programs`，也可以在工作台设置里一键安装。
 - RTT 需要目标固件里链接了 SEGGER RTT 组件（`_SEGGER_RTT` 符号）；纯裸机工程需要先加 RTT 源码。
 - 引脚图是静态扫描结果，宏拼接/间接调用可能识别不到；以 CubeMX `.ioc` 和实际编译结果为准。
 - 面板轮询 1s 刷新状态；构建/下载是后台任务，结束后刷新。
 
 ## 许可说明
 
-本插件自身以 **MIT** 发布。插件**不打包、不分发**任何第三方二进制；工具链是运行时由你（或在设置页点击「下载并安装工具链」）从上游官方发布页下载到本机 `%DSH_HOME%\stm32\tools\` 的。
+本插件自身以 **MIT** 发布。插件**不打包、不分发**任何第三方二进制；工具链是运行时由你（或在 工作台 → 设置 里点击「下载并安装工具链」）从上游官方发布页下载到本机 `%DSH_HOME%\stm32\tools\` 的。
 
 | 组件 | 许可 | 商用 | 说明 |
 | --- | --- | --- | --- |
