@@ -74,14 +74,17 @@ window.__ModuleLoader__.load({
       .stm32-chip-btn { cursor:pointer; background:none; color:inherit; opacity:.9;
         max-width:260px; overflow:hidden; text-overflow:ellipsis; }
       .stm32-chip-btn:hover { border-color:#3b82f6; opacity:1; }
-      .stm32-toolbar-field { display:inline-flex; align-items:center; gap:5px; font-size:11px;
+      .stm32-toolbar-actions { display:flex; align-items:center; gap:6px; margin-left:auto; flex-wrap:wrap; }
+      .stm32-toolbar-field { display:inline-flex; align-items:center; gap:5px; font-size:11.5px;
         opacity:.8; white-space:nowrap; }
       .stm32-toolbar-select { appearance:none; -webkit-appearance:none; cursor:pointer; color:inherit;
-        background:rgba(128,128,128,.08); border:1px solid rgba(128,128,128,.3); border-radius:6px;
-        padding:3px 24px 3px 8px; font:inherit; font-size:11.5px;
+        background:rgba(128,128,128,.07); border:1px solid rgba(128,128,128,.3); border-radius:7px;
+        height:28px; box-sizing:border-box; padding:0 26px 0 10px; font:inherit; font-size:12px;
         background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23888' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
-        background-repeat:no-repeat; background-position:right 8px center; }
+        background-repeat:no-repeat; background-position:right 9px center; transition:border-color .12s ease; }
       .stm32-toolbar-select:hover { border-color:#3b82f6; }
+      .stm32-toolbar-select:focus { outline:none; border-color:#3b82f6;
+        box-shadow:0 0 0 3px rgba(59,130,246,.18); }
       .stm32-btn { display:inline-flex; align-items:center; justify-content:center; gap:4px;
         padding:4px 11px; border-radius:7px; border:1px solid rgba(128,128,128,.28);
         background:rgba(128,128,128,.07); color:inherit; cursor:pointer; font-size:12px; line-height:1.5;
@@ -385,16 +388,18 @@ window.__ModuleLoader__.load({
           { value: 'mass', label: '整片擦除' },
         ]),
         h('span', { key: 'spacer', style: { flex: 1 } }),
-        btn(buildRunning ? '编译中…' : '编译', () => run('build'), { disabled: buildRunning || flashRunning, title: '编译工程 (F7)' }),
-        btn(flashRunning ? '下载中…' : '下载', () => run('flash'), { disabled: flashRunning || buildRunning || !project?.artifact || active, title: '下载到芯片 (F8)' }),
-        active
-          ? btn('停止调试', () => run('debugStop'), { danger: true, title: '结束调试会话' })
-          : btn(debugStarting ? '启动中…' : '调试', () => run('debugStart'), { primary: true, disabled: debugStarting, title: '启动调试并运行到 main' }),
-        active ? btn(running ? '暂停' : '继续', () => run('debug', { op: running ? 'pause' : 'continue', waitMs: 0 }), { title: '暂停 / 继续 (F5)' }) : null,
-        active ? btn('单步', () => run('debug', { op: 'stepOver' }), { title: '单步跳过 (F10)' }) : null,
-        active ? btn('步入', () => run('debug', { op: 'stepInto' }), { title: '单步进入 (F11)' }) : null,
-        active ? btn('复位', () => run('debug', { op: 'reset' }), { title: '复位并暂停' }) : null,
-        busy > 0 ? h('span', { key: 'busy', className: 'stm32-chip' }, '…') : null,
+        h('div', { className: 'stm32-toolbar-actions', key: 'actions' }, [
+          btn(buildRunning ? '编译中…' : '编译', () => run('build'), { disabled: buildRunning || flashRunning, title: '编译工程 (F7)' }),
+          btn(flashRunning ? '下载中…' : '下载', () => run('flash'), { disabled: flashRunning || buildRunning || !project?.artifact || active, title: '下载到芯片 (F8)' }),
+          active
+            ? btn('停止调试', () => run('debugStop'), { danger: true, title: '结束调试会话' })
+            : btn(debugStarting ? '启动中…' : '调试', () => run('debugStart'), { primary: true, disabled: debugStarting, title: '启动调试并运行到 main' }),
+          active ? btn(running ? '暂停' : '继续', () => run('debug', { op: running ? 'pause' : 'continue', waitMs: 0 }), { title: '暂停 / 继续 (F5)' }) : null,
+          active ? btn('单步', () => run('debug', { op: 'stepOver' }), { title: '单步跳过 (F10)' }) : null,
+          active ? btn('步入', () => run('debug', { op: 'stepInto' }), { title: '单步进入 (F11)' }) : null,
+          active ? btn('复位', () => run('debug', { op: 'reset' }), { title: '复位并暂停' }) : null,
+          busy > 0 ? h('span', { key: 'busy', className: 'stm32-chip' }, '…') : null,
+        ]),
       ]);
     }
 
@@ -1645,17 +1650,6 @@ window.__ModuleLoader__.load({
           ]),
         ], 'debug'),
         section('下载', [
-          h('div', { className: 'stm32-set-row', key: 'flashProbe' }, [
-            h('div', { className: 'stm32-set-label' }, '调试器'),
-            h('div', { className: 'stm32-set-control' }, [
-              h('select', { className: 'stm32-set-select', value: config.probe ?? 'stlink', onChange: set('probe') }, [
-                h('option', { value: 'stlink', key: 's' }, 'ST-Link'),
-                h('option', { value: 'cmsis-dap', key: 'c' }, 'CMSIS-DAP / DAPLink'),
-                h('option', { value: 'jlink', key: 'j' }, 'J-Link'),
-              ]),
-              h('div', { className: 'stm32-set-hint' }, '下载使用的调试器，与「调试器」页是同一个设置。'),
-            ]),
-          ]),
           selectRow('flashErase', '擦除方式', [
             { value: 'none', label: '按扇区擦除（默认）' },
             { value: 'mass', label: '整片擦除 (mass erase)' },
