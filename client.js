@@ -362,8 +362,8 @@ window.__ModuleLoader__.load({
       const selectStyle = {
         appearance: 'none', WebkitAppearance: 'none', color: 'inherit', cursor: 'pointer',
         backgroundColor: 'transparent', border: '1px solid rgba(128,128,128,.32)',
-        borderRadius: '999px', height: '22px', boxSizing: 'border-box',
-        padding: '0 20px 0 10px', font: 'inherit', fontSize: '11px',
+        borderRadius: '999px', height: '24px', boxSizing: 'border-box', lineHeight: '22px',
+        padding: '0 22px 0 11px', font: 'inherit', fontSize: '11.5px',
         backgroundImage: caret, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center',
       };
       const quick = (key, label, title, options) => h('label', { className: 'stm32-toolbar-field', key, title }, [
@@ -380,6 +380,7 @@ window.__ModuleLoader__.load({
         h('button', {
           key: 'proj',
           className: 'stm32-chip stm32-chip-btn',
+          style: { height: '24px', boxSizing: 'border-box', padding: '0 10px', display: 'inline-flex', alignItems: 'center', borderRadius: '999px' },
           title: project?.root ? `${project.root}（点击切换工程）` : '选择工程目录',
           onClick: onSwitchProject,
         }, `工程: ${project?.root ? (project.root.split(/[\\/]/).filter(Boolean).pop() || project.root) : '未设置'} ▾`),
