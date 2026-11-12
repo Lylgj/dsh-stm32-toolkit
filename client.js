@@ -79,8 +79,9 @@ window.__ModuleLoader__.load({
       .stm32-btn.primary { background:#3b82f6; border-color:#3b82f6; color:#fff; }
       .stm32-btn.primary:hover { background:#2f6fdb; }
       .stm32-btn.danger { color:#e05c5c; }
-      .stm32-tabs { display:flex; gap:2px; padding:0 8px; border-bottom:1px solid rgba(128,128,128,.22); }
-      .stm32-tab { padding:6px 10px; cursor:pointer; color:inherit; opacity:.62;
+      .stm32-tabs { display:flex; gap:2px; padding:0 8px; border-bottom:1px solid rgba(128,128,128,.22);
+        overflow-x:auto; scrollbar-width:thin; }
+      .stm32-tab { padding:6px 10px; cursor:pointer; color:inherit; opacity:.62; white-space:nowrap;
         border-bottom:2px solid transparent; background:none; border-top:0; border-left:0; border-right:0; font-size:12px; }
       .stm32-tab.active { opacity:1; border-bottom-color:#3b82f6; }
       .stm32-body { flex:1; min-height:0; overflow:auto; padding:8px 10px 12px; }
@@ -129,6 +130,10 @@ window.__ModuleLoader__.load({
       .stm32-settings { width:100%; max-width:780px; box-sizing:border-box; padding:2px 2px 24px;
         display:flex; flex-direction:column; gap:14px; color:inherit;
         font-family:var(--dsw-font-ui, system-ui, -apple-system, "Segoe UI", sans-serif); font-size:12px; }
+      /* Embedded in the workbench tab: use the panel width, keep it compact. */
+      .stm32-settings.stm32-settings-embed { max-width:none; padding:4px 2px 30px; gap:12px; }
+      .stm32-settings-embed .stm32-set-card-body { padding:2px 12px 6px; }
+      .stm32-settings-embed .stm32-set-row { grid-template-columns:132px minmax(0,1fr); gap:8px 12px; padding:7px 0; }
       .stm32-set-head h2 { margin:0 0 3px; font-size:15px; font-weight:600; letter-spacing:.01em; }
       .stm32-set-head p { margin:0; opacity:.6; font-size:12px; line-height:1.5; }
       .stm32-set-card { border:1px solid rgba(128,128,128,.22); border-radius:10px;
@@ -303,6 +308,7 @@ window.__ModuleLoader__.load({
         ['rtt', 'RTT'],
         ['symbols', '符号'],
         ['pins', '引脚'],
+        ['settings', '设置'],
       ];
       return h('div', { className: 'stm32-tabs' }, tabs.map(([id, label]) => h('button', {
         key: id,
@@ -876,6 +882,7 @@ window.__ModuleLoader__.load({
       else if (tab === 'rtt') body = h(RttTab, { state, run, disabled: !active });
       else if (tab === 'symbols') body = h(SymbolTab, { state, run });
       else if (tab === 'pins') body = h(PinsTab, { state, run });
+      else if (tab === 'settings') body = h(SettingsPage, { embedded: true });
       else body = h(StackTab, { state, run, disabled: !active });
 
       return h('div', { className: 'stm32-root' }, [
@@ -1181,7 +1188,7 @@ window.__ModuleLoader__.load({
       return items;
     }
 
-    function SettingsPage() {
+    function SettingsPage({ embedded = false } = {}) {
       const [config, setConfig] = useState(null);
       const [checks, setChecks] = useState(null);
       const [message, setMessage] = useState('');
@@ -1322,7 +1329,7 @@ window.__ModuleLoader__.load({
         h('div', { className: 'stm32-set-card-body' }, rows),
       ]);
 
-      return h('div', { className: 'stm32-settings' }, [
+      return h('div', { className: `stm32-settings${embedded ? ' stm32-settings-embed' : ''}` }, [
         h('div', { className: 'stm32-set-head' }, [
           h('h2', null, 'STM32 工具链'),
           h('p', null, '配置项目目录、编译器与调试器路径；留空的项会自动探测。修改后点“保存”，面板与工具会立刻生效。'),

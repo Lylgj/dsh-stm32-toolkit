@@ -2,7 +2,7 @@
 
 DeepSeek Harness 的 STM32 开发插件。参照 Keil MDK 的工作方式，把「工程识别 → 编译 → 下载 → 在线调试 → 断点 / 寄存器 / 内存 / 反汇编」搬进 DSH：
 
-- **侧边栏 STM32 工作台**：编译、下载、启动/停止调试、暂停/继续、单步、复位，日志、内核寄存器、外设寄存器、内存、断点/监视点、调用栈、变量求值、反汇编、串口监视器、RTT 日志、符号表、引脚图。
+- **侧边栏 STM32 工作台**：编译、下载、启动/停止调试、暂停/继续、单步、复位，日志、内核寄存器、外设寄存器、内存、断点/监视点、调用栈、变量求值、反汇编、串口监视器、RTT 日志、符号表、引脚图、设置（工程与工具链配置直接内嵌在工作台里，不用再开设置窗口）。
 - **19 个 Agent 工具**（`stm32_*`），可以让模型直接编译、下载、下断点、读寄存器、开关串口、看 RTT、查符号/引脚、装工具链、建工程。
 - **`/stm32` 斜杠命令**，手工快速操作。
 - **双后端**：装了 Keil 就用 `UV4.exe`（AC5/AC6 均可）；没有 Keil 就用 `arm-none-eabi-gcc/gdb + CMake/Make + OpenOCD`。没装 Keil 时打开 Keil 工程直接点“编译”即可：插件会把 `.uvprojx` 自动导出成 CMake（GNU 启动文件 + 生成的 `linker.ld`，FreeRTOS 的 RVDS 移植层自动换成 GCC 版本），再用 arm-none-eabi 编译。
@@ -11,10 +11,9 @@ DeepSeek Harness 的 STM32 开发插件。参照 Keil MDK 的工作方式，把�
 - **下载选项**：按扇区擦除 / 整片擦除、下载后校验、下载后复位。
 - **串口监视器**：枚举 COM 口、打开/关闭、收发文本或 HEX（PowerShell 桥接，无需原生模块）。
 - **RTT 日志**：OpenOCD `rtt setup/start/server` + TCP 流，按通道查看 SEGGER RTT 输出。
-- **符号表 / 引脚图**：解析 Keil `.map`、GNU `.map`、`nm` 或 ELF 符号表；静态扫描 `HAL_GPIO_Init` 生成引脚占用图。
+- **符号表 / 引脚图**：解析 Keil `.map`、GNU `.map`、`nm` 或 ELF 符号表；静态扫描 `HAL_GPIO_Init`、`#define` 引脚宏和 `{GPIOx, GPIO_PIN_n}` 静态表生成引脚占用图。
 - **CubeMX `.ioc`**：读取/修改 `.ioc`，或一键生成 CMake 工程骨架（`.ioc` + `CMakeLists.txt` + 链接脚本 + startup + main.c）。
 - **多核**：识别 H7 双核，调试时可切换 `core 0/1`（OpenOCD `-c core N`）。
-- **工程目录选择器**：设置页里点「浏览…」直接选目录，不用手敲路径。
 - **工程目录选择器**：设置页里点「浏览…」直接选目录，不用手敲路径。
 
 ## 安装
@@ -38,7 +37,7 @@ DeepSeek Harness 的 STM32 开发插件。参照 Keil MDK 的工作方式，把�
 
 ## 首次配置
 
-打开 **设置 → STM32**，或让 Agent 调用 `stm32_config`，或用 `/stm32`：
+打开**侧边栏 STM32 工作台 → 设置标签页**（或 设置 → STM32），也可以让 Agent 调用 `stm32_config`，或用 `/stm32`：
 
 | 配置项 | 说明 |
 | --- | --- |
@@ -119,7 +118,8 @@ DeepSeek Harness 的 STM32 开发插件。参照 Keil MDK 的工作方式，把�
 - **串口**：选择 COM 口和波特率，文本/HEX 收发。
 - **RTT**：开启后实时显示 SEGGER RTT 通道输出，可直接发送文本。
 - **符号**：按名字搜索符号、按地址找最近符号，显示源码位置。
-- **引脚**：静态扫描工程源码生成的引脚占用表，可按端口过滤。
+- **引脚**：静态扫描工程源码生成的引脚占用表（支持 `#define` 引脚宏与静态引脚表），可按端口过滤。
+- **设置**：工程目录、芯片、工具链路径、调试器与串口参数直接内嵌在工作台里，保存后立即生效。
 - 状态栏显示芯片、目标、后端、调试状态、当前停止位置、固件文件和环境检测结果。
 
 ## 工作原理
@@ -151,7 +151,7 @@ client.js           Web 工作台与设置页（React，无构建步骤）
 
 ## 验证状态（2026-11-11）
 
-- `npm test`：**36 个测试全部通过**（SVD/MI/uvprojx 解析、构建日志、OpenOCD 下载命令、HTTP 路由、工具执行、斜杠命令、串口桥、`.ioc`、map/ELF 符号、引脚扫描、工具链安装参数、Keil→CMake 导出、设置页渲染冒烟）。
+- `npm test`：**37 个测试全部通过**（SVD/MI/uvprojx 解析、构建日志、OpenOCD 下载命令、HTTP 路由、工具执行、斜杠命令、串口桥、`.ioc`、map/ELF 符号、引脚扫描（含 `#define` 宏与静态表）、工具链安装参数、Keil→CMake 导出、设置页渲染冒烟）。
 - 真实 Keil 工程 `D:\lgj\mcu_acc_app\MDK-ARM\Project.uvprojx` 解析通过：STM32F407VGTx / STM324xG_EVAL / 152 个源文件 / IROM 0x08000000 1MB / IRAM 0x20000000 128KB。
 - 同一工程导出 CMake 通过：150 个可编译源文件、18 个 include、3 个宏；Keil 汇编启动文件被 GNU 启动文件替换，FreeRTOS 的 RVDS 移植层自动换成 GCC 版本。
 - 真实 SVD 下载并解析通过：`STM32F407.svd` 91 个外设，GPIOA 0x40020000，MODER 16 个位域。
