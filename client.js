@@ -170,7 +170,10 @@ window.__ModuleLoader__.load({
         border-radius:6px; padding:6px 9px; font-size:12px;
         font-family:var(--dsw-font-mono, Consolas, monospace); line-height:1.4;
         transition:border-color .12s ease, box-shadow .12s ease; }
-      .stm32-set-select { font-family:var(--dsw-font-ui, system-ui, sans-serif); max-width:260px; }
+      .stm32-set-select { font-family:var(--dsw-font-ui, system-ui, sans-serif); max-width:260px;
+        appearance:none; -webkit-appearance:none; padding-right:28px; cursor:pointer;
+        background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23888' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+        background-repeat:no-repeat; background-position:right 10px center; }
       .stm32-set-input:focus, .stm32-set-select:focus { outline:none; border-color:#3b82f6;
         box-shadow:0 0 0 3px rgba(59,130,246,.18); }
       .stm32-set-input::placeholder { opacity:.4; }
@@ -178,6 +181,8 @@ window.__ModuleLoader__.load({
       .stm32-set-check { display:inline-flex; align-items:center; gap:7px; font-size:12px;
         color:inherit; cursor:pointer; padding-top:4px; }
       .stm32-set-actions { display:flex; align-items:center; gap:8px; padding:2px 2px 0; }
+      .stm32-set-actions-center { justify-content:center; }
+      .stm32-set-actions-message { text-align:center; font-size:11.5px; opacity:.6; margin-top:4px; }
       /* Keep 保存 reachable while scrolling a long settings form. */
       .stm32-settings-embed .stm32-set-actions {
         position:sticky; bottom:0; z-index:3; padding:8px 2px;
@@ -1613,6 +1618,17 @@ window.__ModuleLoader__.load({
           ]),
         ], 'debug'),
         section('下载', [
+          h('div', { className: 'stm32-set-row', key: 'flashProbe' }, [
+            h('div', { className: 'stm32-set-label' }, '调试器'),
+            h('div', { className: 'stm32-set-control' }, [
+              h('select', { className: 'stm32-set-select', value: config.probe ?? 'stlink', onChange: set('probe') }, [
+                h('option', { value: 'stlink', key: 's' }, 'ST-Link'),
+                h('option', { value: 'cmsis-dap', key: 'c' }, 'CMSIS-DAP / DAPLink'),
+                h('option', { value: 'jlink', key: 'j' }, 'J-Link'),
+              ]),
+              h('div', { className: 'stm32-set-hint' }, '下载使用的调试器，与「调试器」页是同一个设置。'),
+            ]),
+          ]),
           selectRow('flashErase', '擦除方式', [
             { value: 'none', label: '按扇区擦除（默认）' },
             { value: 'mass', label: '整片擦除 (mass erase)' },
@@ -1689,11 +1705,11 @@ window.__ModuleLoader__.load({
         ])) : null,
           ]),
         ]),
-        h('div', { className: 'stm32-set-actions' }, [
+        h('div', { className: 'stm32-set-actions stm32-set-actions-center' }, [
           h('button', { className: 'stm32-btn primary', onClick: save, disabled: saving }, saving ? '保存中…' : '保存'),
           h('button', { className: 'stm32-btn', onClick: doctor }, '环境检测'),
-          message ? h('span', { className: 'stm32-set-hint' }, message) : null,
         ]),
+        message ? h('div', { className: 'stm32-set-actions-message' }, message) : null,
         picker ? h(PathPicker, {
           initial: config[picker.key] || '',
           mode: picker.mode,
