@@ -93,3 +93,34 @@ test('settings form gives every path field a browse button', () => {
   assert.match(html, /默认串口/);
   assert.match(html, /保存/);
 });
+
+test('path picker renders Explorer-style shell', () => {
+  assert.ok(clientModule?.__components?.PathPicker, 'PathPicker should be exposed');
+  // Hooks order: cwd, view, error, loading, selected, filter.
+  hooks = [
+    'D:\\lgj\\mcu_acc_app',
+    {
+      dirs: [{ name: 'Src', path: 'D:\\lgj\\mcu_acc_app\\Src' }],
+      files: [],
+      parent: 'D:\\lgj',
+      drives: [{ name: 'C:', path: 'C:\\' }, { name: 'D:', path: 'D:\\' }],
+      selected: '',
+    },
+    '',
+    false,
+    '',
+    '',
+  ];
+  hookIndex = 0;
+  const html = renderNode(clientModule.__components.PathPicker({
+    initial: 'D:\\lgj\\mcu_acc_app',
+    mode: 'dir',
+    onPick() {},
+    onClose() {},
+  }));
+  assert.match(html, /此电脑/);
+  assert.match(html, /D:/);
+  assert.match(html, /个文件夹/);
+  assert.match(html, /选择此目录/);
+  assert.match(html, /取消/);
+});

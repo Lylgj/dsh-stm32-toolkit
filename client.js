@@ -75,18 +75,23 @@ window.__ModuleLoader__.load({
         max-width:260px; overflow:hidden; text-overflow:ellipsis; }
       .stm32-chip-btn:hover { border-color:#3b82f6; opacity:1; }
       .stm32-btn { display:inline-flex; align-items:center; justify-content:center; gap:4px;
-        padding:3px 10px; border-radius:5px; border:1px solid rgba(128,128,128,.32);
-        background:rgba(128,128,128,.08); color:inherit; cursor:pointer; font-size:12px; line-height:1.5; }
-      .stm32-btn:hover { background:rgba(128,128,128,.16); }
-      .stm32-btn:disabled { opacity:.45; cursor:not-allowed; }
+        padding:4px 11px; border-radius:7px; border:1px solid rgba(128,128,128,.28);
+        background:rgba(128,128,128,.07); color:inherit; cursor:pointer; font-size:12px; line-height:1.5;
+        transition:background .12s ease, border-color .12s ease, opacity .12s ease; }
+      .stm32-btn:hover:not(:disabled) { background:rgba(128,128,128,.15); }
+      .stm32-btn:disabled { opacity:.42; cursor:not-allowed; }
       .stm32-btn.primary { background:#3b82f6; border-color:#3b82f6; color:#fff; }
-      .stm32-btn.primary:hover { background:#2f6fdb; }
+      .stm32-btn.primary:hover:not(:disabled) { background:#2f6fdb; }
       .stm32-btn.danger { color:#e05c5c; }
-      .stm32-tabs { display:flex; gap:2px; padding:0 8px; border-bottom:1px solid rgba(128,128,128,.22);
-        overflow-x:auto; scrollbar-width:thin; }
-      .stm32-tab { padding:6px 10px; cursor:pointer; color:inherit; opacity:.62; white-space:nowrap;
-        border-bottom:2px solid transparent; background:none; border-top:0; border-left:0; border-right:0; font-size:12px; }
-      .stm32-tab.active { opacity:1; border-bottom-color:#3b82f6; }
+      .stm32-tabs { display:flex; gap:3px; padding:6px 8px 0; border-bottom:1px solid rgba(128,128,128,.18);
+        overflow-x:auto; scrollbar-width:none; }
+      .stm32-tabs::-webkit-scrollbar { display:none; }
+      .stm32-tab { padding:6px 11px 7px; cursor:pointer; color:inherit; opacity:.6; white-space:nowrap;
+        border:0; border-radius:8px 8px 0 0; background:none; font:inherit; font-size:12.5px;
+        transition:background .12s ease, opacity .12s ease; }
+      .stm32-tab:hover { opacity:.9; background:rgba(128,128,128,.08); }
+      .stm32-tab.active { opacity:1; font-weight:600; background:rgba(128,128,128,.1);
+        box-shadow:inset 0 -2px 0 #3b82f6; }
       .stm32-body { flex:1; min-height:0; overflow:auto; padding:8px 10px 12px; }
       .stm32-console { font-family:var(--dsw-font-mono, "Cascadia Code", Consolas, monospace); font-size:11.5px;
         white-space:pre-wrap; word-break:break-word; margin:0; line-height:1.55; }
@@ -139,12 +144,19 @@ window.__ModuleLoader__.load({
       .stm32-settings-embed .stm32-set-row { grid-template-columns:132px minmax(0,1fr); gap:8px 12px; padding:7px 0; }
       .stm32-set-head h2 { margin:0 0 3px; font-size:15px; font-weight:600; letter-spacing:.01em; }
       .stm32-set-head p { margin:0; opacity:.6; font-size:12px; line-height:1.5; }
-      .stm32-set-nav { display:flex; flex-wrap:wrap; gap:6px; padding:2px 0; }
-      .stm32-set-navitem { border:1px solid rgba(128,128,128,.25); background:transparent; color:inherit;
-        opacity:.75; border-radius:999px; padding:3px 10px; font-size:11.5px; cursor:pointer; line-height:1.6; }
-      .stm32-set-navitem:hover { opacity:1; background:rgba(128,128,128,.08); }
+      .stm32-set-layout { display:grid; grid-template-columns:178px minmax(0,1fr); gap:16px; align-items:start; }
+      .stm32-set-side { position:sticky; top:6px; display:flex; flex-direction:column; gap:2px; }
+      .stm32-set-sideitem { text-align:left; border:0; background:transparent; color:inherit; opacity:.65;
+        padding:7px 10px; border-radius:7px; font:inherit; font-size:12.5px; cursor:pointer; }
+      .stm32-set-sideitem:hover { background:rgba(128,128,128,.1); opacity:1; }
+      .stm32-set-sideitem.active { background:rgba(59,130,246,.13); color:#3b82f6; opacity:1; font-weight:600; }
+      .stm32-set-content { display:flex; flex-direction:column; gap:12px; min-width:0; }
+      @media (max-width: 760px) {
+        .stm32-set-layout { grid-template-columns:1fr; gap:10px; }
+        .stm32-set-side { position:static; flex-direction:row; flex-wrap:wrap; }
+      }
       .stm32-set-card { border:1px solid rgba(128,128,128,.22); border-radius:10px;
-        background:rgba(128,128,128,.04); overflow:hidden; }
+        background:rgba(128,128,128,.04); overflow:hidden; box-shadow:0 1px 2px rgba(0,0,0,.04); }
       .stm32-set-card-title { padding:11px 16px 9px; font-size:12.5px; font-weight:600;
         border-bottom:1px solid rgba(128,128,128,.18); }
       .stm32-set-card-body { padding:2px 16px 8px; }
@@ -186,30 +198,69 @@ window.__ModuleLoader__.load({
       .stm32-check-label { opacity:.7; }
       .stm32-check-value { font-family:var(--dsw-font-mono, Consolas, monospace); font-size:11.5px;
         word-break:break-all; }
-      .stm32-picker-mask { position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,.45);
-        display:flex; align-items:center; justify-content:center; }
-      .stm32-picker { width:min(560px,92vw); max-height:72vh; display:flex; flex-direction:column;
-        background:Canvas; color:CanvasText; border:1px solid rgba(128,128,128,.35);
-        border-radius:12px; box-shadow:0 20px 56px rgba(0,0,0,.5); overflow:hidden; font-size:12px; }
-      .stm32-picker-head { display:flex; align-items:center; gap:10px; padding:12px 14px;
-        border-bottom:1px solid rgba(128,128,128,.25); }
-      .stm32-picker-title { font-weight:600; white-space:nowrap; }
-      .stm32-picker-path { flex:1; min-width:0; text-align:right; font-family:var(--dsw-font-mono,Consolas,monospace);
-        font-size:11px; opacity:.6; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-      .stm32-picker-drives { display:flex; flex-wrap:wrap; gap:6px; padding:10px 14px 0; }
-      .stm32-picker-list { flex:1; min-height:180px; overflow:auto; padding:8px; }
-      .stm32-picker-item { display:flex; align-items:center; gap:8px; padding:6px 9px; border-radius:6px;
-        cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      .stm32-picker-item:hover { background:rgba(128,128,128,.16); }
-      .stm32-picker-item.up { opacity:.65; }
-      .stm32-picker-item.file { font-family:var(--dsw-font-mono,Consolas,monospace); font-size:11.5px; }
-      .stm32-picker-hint { flex:1; font-size:11px; opacity:.55; text-align:left; }
-      .stm32-picker-ico { opacity:.5; }
-      .stm32-picker-empty { padding:28px 8px; text-align:center; opacity:.55; }
-      .stm32-picker-error { padding:6px 14px; color:#e05c5c; font-size:11px; }
-      .stm32-picker-foot { display:flex; justify-content:flex-end; gap:8px; padding:10px 14px;
-        border-top:1px solid rgba(128,128,128,.25); }
-      .stm32-picker-foot .stm32-btn { padding:5px 14px; border-radius:6px; }
+      .stm32-picker-mask { position:fixed; inset:0; z-index:9999; background:rgba(15,18,24,.45);
+        backdrop-filter:blur(2px); display:flex; align-items:center; justify-content:center; padding:16px; }
+      .stm32-picker { width:min(760px,94vw); height:min(540px,84vh); display:flex; flex-direction:column;
+        background:Canvas; color:CanvasText; border:1px solid rgba(128,128,128,.3); border-radius:14px;
+        box-shadow:0 24px 72px rgba(0,0,0,.45); overflow:hidden; font-size:12px; outline:none; }
+      .stm32-picker-head { display:flex; align-items:center; gap:10px; padding:12px 16px;
+        border-bottom:1px solid rgba(128,128,128,.18); }
+      .stm32-picker-title { font-weight:600; font-size:13px; }
+      .stm32-picker-x { margin-left:auto; border:0; background:transparent; color:inherit; font-size:18px;
+        line-height:1; width:28px; height:28px; border-radius:7px; cursor:pointer; opacity:.55; }
+      .stm32-picker-x:hover { background:rgba(128,128,128,.15); opacity:1; }
+      .stm32-picker-bar { display:flex; align-items:center; gap:6px; padding:8px 12px;
+        border-bottom:1px solid rgba(128,128,128,.14); }
+      .stm32-picker-nav { border:1px solid rgba(128,128,128,.24); background:transparent; color:inherit;
+        width:27px; height:27px; border-radius:7px; cursor:pointer; line-height:1; }
+      .stm32-picker-nav:hover:not(:disabled) { background:rgba(128,128,128,.12); }
+      .stm32-picker-nav:disabled { opacity:.35; cursor:default; }
+      .stm32-picker-crumbs { flex:1; min-width:0; display:flex; align-items:center; gap:1px; overflow:hidden;
+        border:1px solid rgba(128,128,128,.2); border-radius:7px; padding:3px 6px; background:rgba(128,128,128,.05); }
+      .stm32-picker-crumb { border:0; background:transparent; color:inherit; font:inherit; padding:2px 6px;
+        border-radius:5px; cursor:pointer; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .stm32-picker-crumb:hover { background:rgba(128,128,128,.14); }
+      .stm32-picker-sep { opacity:.3; }
+      .stm32-picker-body { flex:1; min-height:0; display:grid; grid-template-columns:172px minmax(0,1fr); }
+      .stm32-picker-side { border-right:1px solid rgba(128,128,128,.16); padding:8px 6px; display:flex;
+        flex-direction:column; gap:2px; overflow:auto; background:rgba(128,128,128,.035); }
+      .stm32-picker-side-title { font-size:10.5px; letter-spacing:.06em; text-transform:uppercase;
+        opacity:.45; padding:4px 8px 6px; }
+      .stm32-picker-sideitem { display:flex; align-items:center; gap:7px; border:0; background:transparent;
+        color:inherit; text-align:left; padding:6px 8px; border-radius:6px; cursor:pointer; font:inherit;
+        font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .stm32-picker-sideitem:hover { background:rgba(128,128,128,.12); }
+      .stm32-picker-sideitem.active { background:rgba(59,130,246,.14); color:#3b82f6; }
+      .stm32-picker-side-empty { opacity:.5; padding:6px 8px; }
+      .stm32-picker-main { display:flex; flex-direction:column; min-width:0; min-height:0; }
+      .stm32-picker-filterbar { display:flex; align-items:center; gap:10px; padding:7px 10px;
+        border-bottom:1px solid rgba(128,128,128,.12); }
+      .stm32-picker-filter { flex:1; min-width:0; border:1px solid rgba(128,128,128,.22); border-radius:6px;
+        background:rgba(128,128,128,.06); color:inherit; font:inherit; padding:4px 9px; }
+      .stm32-picker-filter:focus { outline:none; border-color:#3b82f6; }
+      .stm32-picker-count { font-size:11px; opacity:.5; white-space:nowrap; }
+      .stm32-picker-list { flex:1; min-height:0; overflow:auto; padding:6px; }
+      .stm32-picker-item { display:flex; align-items:center; gap:8px; padding:5px 9px; border-radius:6px;
+        cursor:default; white-space:nowrap; overflow:hidden; user-select:none; }
+      .stm32-picker-item:hover { background:rgba(128,128,128,.1); }
+      .stm32-picker-item.active { background:rgba(59,130,246,.16); }
+      .stm32-picker-item.up { opacity:.7; }
+      .stm32-picker-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; }
+      .stm32-picker-item.file .stm32-picker-name { font-family:var(--dsw-font-mono,Consolas,monospace); font-size:11.5px; }
+      .stm32-picker-tag { font-size:10px; opacity:.4; }
+      .stm32-picker-ico { width:16px; text-align:center; flex:0 0 16px; }
+      .stm32-picker-empty { padding:40px 8px; text-align:center; opacity:.55; }
+      .stm32-picker-error { padding:6px 16px; color:#e05c5c; font-size:11px; }
+      .stm32-picker-foot { display:flex; align-items:center; gap:8px; padding:10px 14px;
+        border-top:1px solid rgba(128,128,128,.18); }
+      .stm32-picker-hint { flex:1; min-width:0; font-size:11px; opacity:.55; font-family:var(--dsw-font-mono,Consolas,monospace);
+        overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+      .stm32-picker-foot .stm32-btn { padding:5px 16px; }
+      .stm32-dialog { width:min(480px,92vw); max-height:78vh; display:flex; flex-direction:column;
+        background:Canvas; color:CanvasText; border:1px solid rgba(128,128,128,.3); border-radius:14px;
+        box-shadow:0 24px 72px rgba(0,0,0,.45); overflow:hidden; font-size:12px; }
+      .stm32-dialog-body { padding:10px 16px; overflow:auto; display:flex; flex-direction:column; gap:8px; }
+      .stm32-dialog .stm32-picker-foot { justify-content:flex-end; }
       @media (max-width:640px) {
         .stm32-set-row { grid-template-columns:1fr; gap:5px; }
         .stm32-set-label { padding-top:0; }
@@ -1155,11 +1206,17 @@ window.__ModuleLoader__.load({
 
     // -------------------------------------------------------- directory picker
 
+    /**
+     * Windows-Explorer style picker: breadcrumb address bar, drive sidebar,
+     * name filter, selection highlight, double-click to open, Enter/双击确认.
+     */
     function PathPicker({ initial, mode = 'dir', exts = [], title, onPick, onClose }) {
-      const [path, setPath] = useState(initial || '');
+      const [cwd, setCwd] = useState(initial || '');
       const [view, setView] = useState({ dirs: [], files: [], parent: null, drives: [], selected: '' });
       const [error, setError] = useState('');
       const [loading, setLoading] = useState(false);
+      const [selected, setSelected] = useState('');
+      const [filter, setFilter] = useState('');
       const extKey = exts.join(',');
 
       const browse = useCallback(async (target) => {
@@ -1168,7 +1225,7 @@ window.__ModuleLoader__.load({
         try {
           const json = await api('fs', { path: target ?? '', ext: extKey }, { method: 'GET' });
           if (!json.ok) throw new Error(json.error ?? '无法读取路径');
-          setPath(json.path ?? '');
+          setCwd(json.path ?? '');
           setView({
             dirs: json.dirs ?? [],
             files: json.files ?? [],
@@ -1176,6 +1233,8 @@ window.__ModuleLoader__.load({
             drives: json.drives ?? [],
             selected: json.selected ?? '',
           });
+          setSelected(json.selected ?? '');
+          setFilter('');
         } catch (e) {
           setError(String(e?.message ?? e));
         } finally {
@@ -1185,53 +1244,141 @@ window.__ModuleLoader__.load({
 
       useEffect(() => { browse(initial || ''); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-      const items = [
-        view.parent ? h('div', { key: '..', className: 'stm32-picker-item up', onClick: () => browse(view.parent) }, '⬆ 上一级') : null,
-        ...(view.dirs ?? []).map((d) => h('div', {
-          key: `d:${d.path}`,
-          className: 'stm32-picker-item',
-          title: d.path,
-          onClick: () => browse(d.path),
-        }, h('span', { className: 'stm32-picker-ico' }, '▸'), d.name)),
-        ...(view.files ?? []).map((f) => h('div', {
-          key: `f:${f.path}`,
-          className: 'stm32-picker-item file',
-          title: f.path,
-          onClick: () => onPick(f.path),
-        }, h('span', { className: 'stm32-picker-ico' }, '▪'), f.name)),
-      ].filter(Boolean);
+      const activate = () => {
+        if (mode === 'file') {
+          if (selected) onPick(selected);
+          return;
+        }
+        const path = selected || cwd;
+        if (path) onPick(path);
+      };
+
+      const crumbs = useMemo(() => {
+        if (!cwd) return [];
+        const parts = cwd.split(/[\\/]+/).filter(Boolean);
+        const list = [];
+        let acc = '';
+        for (let i = 0; i < parts.length; i += 1) {
+          acc = i === 0 ? `${parts[0]}\\` : `${acc.replace(/[\\/]+$/, '')}\\${parts[i]}`;
+          list.push({ name: parts[i], path: acc });
+        }
+        return list;
+      }, [cwd]);
+
+      const kw = filter.trim().toLowerCase();
+      const dirs = (view.dirs ?? []).filter((d) => !kw || d.name.toLowerCase().includes(kw));
+      const files = (view.files ?? []).filter((f) => !kw || f.name.toLowerCase().includes(kw));
+
+      const row = (item, isFile) => h('div', {
+        key: `${isFile ? 'f' : 'd'}:${item.path}`,
+        className: `stm32-picker-item${isFile ? ' file' : ''}${selected === item.path ? ' active' : ''}`,
+        title: item.path,
+        onClick: () => setSelected(item.path),
+        onDoubleClick: () => (isFile ? onPick(item.path) : browse(item.path)),
+      }, [
+        h('span', { className: 'stm32-picker-ico' }, isFile ? '📄' : '📁'),
+        h('span', { className: 'stm32-picker-name' }, item.name),
+        isFile ? h('span', { className: 'stm32-picker-tag' }, '文件') : null,
+      ]);
 
       let list;
-      if (loading) list = [h('div', { key: 'loading', className: 'stm32-picker-empty' }, '读取中…')];
-      else if (!items.length) {
-        list = [h('div', { key: 'empty', className: 'stm32-picker-empty' }, error ? '无法读取该目录'
-          : ((view.drives ?? []).length ? '选择一个磁盘' : '没有子目录'))];
-      } else list = items;
+      if (loading) {
+        list = [h('div', { key: 'loading', className: 'stm32-picker-empty' }, '读取中…')];
+      } else if (!dirs.length && !files.length) {
+        list = [h('div', { key: 'empty', className: 'stm32-picker-empty' }, error ? '无法读取该目录' : '这个目录是空的')];
+      } else {
+        list = [
+          view.parent ? h('div', {
+            key: '..',
+            className: 'stm32-picker-item up',
+            onClick: () => browse(view.parent),
+            onDoubleClick: () => browse(view.parent),
+          }, [h('span', { className: 'stm32-picker-ico' }, '↩'), h('span', { className: 'stm32-picker-name' }, '..')]) : null,
+          ...dirs.map((item) => row(item, false)),
+          ...files.map((item) => row(item, true)),
+        ].filter(Boolean);
+      }
+
+      const canAct = mode === 'file' ? Boolean(selected) : Boolean(selected || cwd);
+      const pickLabel = mode === 'file' ? '打开' : '选择此目录';
 
       return h('div', {
         className: 'stm32-picker-mask',
         onMouseDown: (event) => { if (event.target === event.currentTarget) onClose(); },
-      }, h('div', { className: 'stm32-picker' }, [
+      }, h('div', {
+        className: 'stm32-picker',
+        tabIndex: -1,
+        onKeyDown: (event) => {
+          if (event.key === 'Escape') { event.stopPropagation(); onClose(); }
+          if (event.key === 'Enter') { event.preventDefault(); activate(); }
+        },
+      }, [
         h('div', { className: 'stm32-picker-head' }, [
           h('span', { className: 'stm32-picker-title' }, title || (mode === 'file' ? '选择文件' : '选择目录')),
-          h('span', { className: 'stm32-picker-path', title: path || '此电脑' }, path || '此电脑'),
+          h('button', { className: 'stm32-picker-x', type: 'button', title: '关闭 (Esc)', onClick: onClose }, '×'),
         ]),
-        (view.drives ?? []).length
-          ? h('div', { className: 'stm32-picker-drives' }, view.drives.map((d) => h('button', {
-            key: d.path,
-            className: 'stm32-btn',
-            onClick: () => browse(d.path),
-          }, d.name)))
-          : null,
-        h('div', { className: 'stm32-picker-list' }, list),
+        h('div', { className: 'stm32-picker-bar' }, [
+          h('button', {
+            className: 'stm32-picker-nav',
+            type: 'button',
+            title: '上一级',
+            disabled: !view.parent,
+            onClick: () => browse(view.parent),
+          }, '⬆'),
+          h('button', {
+            className: 'stm32-picker-nav',
+            type: 'button',
+            title: '刷新',
+            onClick: () => browse(cwd),
+          }, '↻'),
+          h('div', { className: 'stm32-picker-crumbs' }, [
+            h('button', { key: 'root', className: 'stm32-picker-crumb', type: 'button', onClick: () => browse('') }, '此电脑'),
+            ...crumbs.map((crumb) => [
+              h('span', { key: `s:${crumb.path}`, className: 'stm32-picker-sep' }, '›'),
+              h('button', {
+                key: crumb.path,
+                className: 'stm32-picker-crumb',
+                type: 'button',
+                onClick: () => browse(crumb.path),
+              }, crumb.name),
+            ]).flat(),
+          ]),
+        ]),
+        h('div', { className: 'stm32-picker-body' }, [
+          h('aside', { className: 'stm32-picker-side' }, [
+            h('div', { className: 'stm32-picker-side-title' }, '此电脑'),
+            ...((view.drives ?? []).length
+              ? view.drives.map((drive) => h('button', {
+                key: drive.path,
+                type: 'button',
+                className: `stm32-picker-sideitem${cwd === drive.path ? ' active' : ''}`,
+                onClick: () => browse(drive.path),
+              }, [h('span', { className: 'stm32-picker-ico' }, '💽'), drive.name]))
+              : [h('div', { key: 'nodrives', className: 'stm32-picker-side-empty' }, '无磁盘信息')]),
+          ]),
+          h('div', { className: 'stm32-picker-main' }, [
+            h('div', { className: 'stm32-picker-filterbar' }, [
+              h('input', {
+                className: 'stm32-picker-filter',
+                placeholder: '筛选名称…',
+                value: filter,
+                onChange: (event) => setFilter(event.target.value),
+              }),
+              h('span', { className: 'stm32-picker-count' }, `${dirs.length} 个文件夹 · ${files.length} 个文件`),
+            ]),
+            h('div', { className: 'stm32-picker-list' }, list),
+          ]),
+        ]),
         error ? h('div', { className: 'stm32-picker-error' }, error) : null,
         h('div', { className: 'stm32-picker-foot' }, [
-          h('span', { className: 'stm32-picker-hint' },
-            mode === 'file' ? '点击文件名即可选中' : '进入目标目录后点“选择此目录”'),
-          h('button', { className: 'stm32-btn', onClick: onClose }, '取消'),
-          mode === 'dir'
-            ? h('button', { className: 'stm32-btn primary', disabled: !path, onClick: () => onPick(path) }, '选择此目录')
-            : null,
+          h('span', { className: 'stm32-picker-hint', title: selected || cwd }, selected || cwd || '选择一个位置'),
+          h('button', { className: 'stm32-btn', type: 'button', onClick: onClose }, '取消'),
+          h('button', {
+            className: 'stm32-btn primary',
+            type: 'button',
+            disabled: !canAct,
+            onClick: activate,
+          }, pickLabel),
         ]),
       ]));
     }
@@ -1246,6 +1393,7 @@ window.__ModuleLoader__.load({
       const [env, setEnv] = useState(null);
       const [installing, setInstalling] = useState(false);
       const [exporting, setExporting] = useState(false);
+      const [active, setActive] = useState('project');
       useEffect(() => { ensureStyle(document); api('config').then((json) => { if (json.ok) setConfig(json.config); }).catch(() => {}); }, []);
       const refreshPorts = useCallback(async () => {
         try {
@@ -1408,8 +1556,14 @@ window.__ModuleLoader__.load({
           h('h2', null, 'STM32 工具链'),
           h('p', null, '配置项目目录、编译器与调试器路径；留空的项会自动探测。修改后点“保存”，面板与工具会立刻生效。'),
         ]),
-        embedded ? h('nav', { className: 'stm32-set-nav', key: 'nav' }, SET_SECTIONS.map(([id, label]) =>
-          h('button', { key: id, type: 'button', className: 'stm32-set-navitem', onClick: () => jumpTo(id) }, label))) : null,
+        h('div', { className: 'stm32-set-layout' }, [
+          h('aside', { className: 'stm32-set-side', key: 'side' }, SET_SECTIONS.map(([id, label]) => h('button', {
+            key: id,
+            type: 'button',
+            className: `stm32-set-sideitem${active === id ? ' active' : ''}`,
+            onClick: () => { setActive(id); jumpTo(id); },
+          }, label))),
+          h('div', { className: 'stm32-set-content', key: 'content' }, [
         section('工程', [
           field('projectDir', '工程目录', 'D:\\path\\to\\project', '留空则使用当前会话目录；支持 Keil .uvprojx、CMake、Makefile 工程。', { mode: 'dir', title: '选择工程目录' }),
           field('device', '芯片型号', 'STM32F407VGTx', '留空则从 .uvprojx 自动读取，用于匹配 OpenOCD target 与 SVD。'),
@@ -1515,19 +1669,31 @@ window.__ModuleLoader__.load({
             ]),
           ]),
         ]) : null,
+        checks ? h('div', {
+          className: 'stm32-picker-mask',
+          key: 'checks-mask',
+          onMouseDown: (event) => { if (event.target === event.currentTarget) setChecks(null); },
+        }, h('div', { className: 'stm32-dialog' }, [
+          h('div', { className: 'stm32-picker-head' }, [
+            h('span', { className: 'stm32-picker-title' }, '环境检测'),
+            h('button', { className: 'stm32-picker-x', type: 'button', title: '关闭', onClick: () => setChecks(null) }, '×'),
+          ]),
+          h('div', { className: 'stm32-dialog-body' }, checks.map((row) => h('div', { className: 'stm32-check-row', key: row.label }, [
+            h('span', { className: 'stm32-check-dot ' + (row.ok === true ? 'ok' : row.ok === false ? 'bad' : 'unknown') }),
+            h('span', { className: 'stm32-check-label' }, row.label),
+            h('span', { className: 'stm32-check-value', title: row.value }, row.value),
+          ]))),
+          h('div', { className: 'stm32-picker-foot' }, [
+            h('button', { className: 'stm32-btn primary', type: 'button', onClick: () => setChecks(null) }, '关闭'),
+          ]),
+        ])) : null,
+          ]),
+        ]),
         h('div', { className: 'stm32-set-actions' }, [
           h('button', { className: 'stm32-btn primary', onClick: save, disabled: saving }, saving ? '保存中…' : '保存'),
           h('button', { className: 'stm32-btn', onClick: doctor }, '环境检测'),
           message ? h('span', { className: 'stm32-set-hint' }, message) : null,
         ]),
-        checks ? h('section', { className: 'stm32-set-card', key: 'checks' }, [
-          h('div', { className: 'stm32-set-card-title' }, '环境检测'),
-          h('div', { className: 'stm32-set-card-body' }, checks.map((row) => h('div', { className: 'stm32-check-row', key: row.label }, [
-            h('span', { className: 'stm32-check-dot ' + (row.ok === true ? 'ok' : row.ok === false ? 'bad' : 'unknown') }),
-            h('span', { className: 'stm32-check-label' }, row.label),
-            h('span', { className: 'stm32-check-value', title: row.value }, row.value),
-          ]))),
-        ]) : null,
         picker ? h(PathPicker, {
           initial: config[picker.key] || '',
           mode: picker.mode,
@@ -1582,7 +1748,7 @@ window.__ModuleLoader__.load({
       inject: ['slots', 'locale'],
       apply,
       // Exposed for the render smoke tests; not part of the plugin API.
-      __components: { Workbench, SettingsPage },
+      __components: { Workbench, SettingsPage, PathPicker },
     };
     return module.exports;
   },
