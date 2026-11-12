@@ -94,6 +94,22 @@ test('settings form gives every path field a browse button', () => {
   assert.match(html, /保存/);
 });
 
+test('toolbar offers probe and erase quick selectors', () => {
+  assert.ok(clientModule?.__components?.Toolbar, 'Toolbar should be exposed');
+  const html = renderNode(clientModule.__components.Toolbar({
+    state: { config: { probe: 'cmsis-dap', flashErase: 'mass' }, project: { root: 'D:\\lgj\\mcu_acc_app', device: 'STM32F407VGTx' } },
+    run() {},
+    busy: 0,
+    tab: 'console',
+    setTab() {},
+    onSwitchProject() {},
+  }));
+  assert.match(html, /调试器/);
+  assert.match(html, /CMSIS-DAP/);
+  assert.match(html, /擦除/);
+  assert.match(html, /整片擦除/);
+});
+
 test('path picker renders Explorer-style shell', () => {
   assert.ok(clientModule?.__components?.PathPicker, 'PathPicker should be exposed');
   // Hooks order: cwd, view, error, loading, selected, filter.

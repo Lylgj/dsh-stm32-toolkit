@@ -74,6 +74,14 @@ window.__ModuleLoader__.load({
       .stm32-chip-btn { cursor:pointer; background:none; color:inherit; opacity:.9;
         max-width:260px; overflow:hidden; text-overflow:ellipsis; }
       .stm32-chip-btn:hover { border-color:#3b82f6; opacity:1; }
+      .stm32-toolbar-field { display:inline-flex; align-items:center; gap:5px; font-size:11px;
+        opacity:.8; white-space:nowrap; }
+      .stm32-toolbar-select { appearance:none; -webkit-appearance:none; cursor:pointer; color:inherit;
+        background:rgba(128,128,128,.08); border:1px solid rgba(128,128,128,.3); border-radius:6px;
+        padding:3px 24px 3px 8px; font:inherit; font-size:11.5px;
+        background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath fill='%23888' d='M0 0h10L5 6z'/%3E%3C/svg%3E");
+        background-repeat:no-repeat; background-position:right 8px center; }
+      .stm32-toolbar-select:hover { border-color:#3b82f6; }
       .stm32-btn { display:inline-flex; align-items:center; justify-content:center; gap:4px;
         padding:4px 11px; border-radius:7px; border:1px solid rgba(128,128,128,.28);
         background:rgba(128,128,128,.07); color:inherit; cursor:pointer; font-size:12px; line-height:1.5;
@@ -346,6 +354,16 @@ window.__ModuleLoader__.load({
         onClick,
       }, label);
 
+      const config = state?.config ?? {};
+      const quick = (key, label, title, options) => h('label', { className: 'stm32-toolbar-field', key, title }, [
+        h('span', null, label),
+        h('select', {
+          className: 'stm32-toolbar-select',
+          value: config[key] ?? options[0]?.value ?? '',
+          onChange: (event) => run('config', { patch: { [key]: event.target.value } }),
+        }, options.map((option) => h('option', { value: option.value, key: option.value }, option.label))),
+      ]);
+
       return h('div', { className: 'stm32-toolbar' }, [
         h('span', { className: 'stm32-title', key: 't' }, 'STM32'),
         h('button', {
@@ -357,6 +375,15 @@ window.__ModuleLoader__.load({
         project ? h('span', { className: 'stm32-chip', key: 'dev', title: project.root }, project.device || '未知芯片') : null,
         project && project.target ? h('span', { className: 'stm32-chip', key: 'tgt' }, project.target) : null,
         project?.backend ? h('span', { className: 'stm32-chip', key: 'be' }, project.backend === 'keil' ? 'Keil UV4' : 'GCC') : null,
+        quick('probe', '调试器', '下载 / 调试使用的调试器（与设置页同步）', [
+          { value: 'stlink', label: 'ST-Link' },
+          { value: 'cmsis-dap', label: 'CMSIS-DAP' },
+          { value: 'jlink', label: 'J-Link' },
+        ]),
+        quick('flashErase', '擦除', '下载时擦除 Flash 的方式（与设置页同步）', [
+          { value: 'none', label: '按扇区' },
+          { value: 'mass', label: '整片擦除' },
+        ]),
         h('span', { key: 'spacer', style: { flex: 1 } }),
         btn(buildRunning ? '编译中…' : '编译', () => run('build'), { disabled: buildRunning || flashRunning, title: '编译工程 (F7)' }),
         btn(flashRunning ? '下载中…' : '下载', () => run('flash'), { disabled: flashRunning || buildRunning || !project?.artifact || active, title: '下载到芯片 (F8)' }),
@@ -1764,7 +1791,7 @@ window.__ModuleLoader__.load({
       inject: ['slots', 'locale'],
       apply,
       // Exposed for the render smoke tests; not part of the plugin API.
-      __components: { Workbench, SettingsPage, PathPicker },
+      __components: { Workbench, SettingsPage, PathPicker, Toolbar },
     };
     return module.exports;
   },
