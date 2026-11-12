@@ -358,10 +358,18 @@ window.__ModuleLoader__.load({
       }, label);
 
       const config = state?.config ?? {};
+      const caret = "url(\"data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5' viewBox='0 0 8 5'%3E%3Cpath fill='%23888' d='M0 0h8L4 5z'/%3E%3C/svg%3E\")";
+      const selectStyle = {
+        appearance: 'none', WebkitAppearance: 'none', color: 'inherit', cursor: 'pointer',
+        backgroundColor: 'transparent', border: '1px solid rgba(128,128,128,.32)',
+        borderRadius: '999px', height: '24px', boxSizing: 'border-box',
+        padding: '0 22px 0 11px', font: 'inherit', fontSize: '11.5px',
+        backgroundImage: caret, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center',
+      };
       const quick = (key, label, title, options) => h('label', { className: 'stm32-toolbar-field', key, title }, [
-        h('span', null, label),
+        h('span', { style: { fontSize: '11px', opacity: '.62' } }, label),
         h('select', {
-          className: 'stm32-toolbar-select',
+          style: selectStyle,
           value: config[key] ?? options[0]?.value ?? '',
           onChange: (event) => run('config', { patch: { [key]: event.target.value } }),
         }, options.map((option) => h('option', { value: option.value, key: option.value }, option.label))),
@@ -375,9 +383,6 @@ window.__ModuleLoader__.load({
           title: project?.root ? `${project.root}（点击切换工程）` : '选择工程目录',
           onClick: onSwitchProject,
         }, `工程: ${project?.root ? (project.root.split(/[\\/]/).filter(Boolean).pop() || project.root) : '未设置'} ▾`),
-        project ? h('span', { className: 'stm32-chip', key: 'dev', title: project.root }, project.device || '未知芯片') : null,
-        project && project.target ? h('span', { className: 'stm32-chip', key: 'tgt' }, project.target) : null,
-        project?.backend ? h('span', { className: 'stm32-chip', key: 'be' }, project.backend === 'keil' ? 'Keil UV4' : 'GCC') : null,
         quick('probe', '调试器', '下载 / 调试使用的调试器（与设置页同步）', [
           { value: 'stlink', label: 'ST-Link' },
           { value: 'cmsis-dap', label: 'CMSIS-DAP' },
