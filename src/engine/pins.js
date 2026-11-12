@@ -8,64 +8,196 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { extname, join } from 'node:path';
 
 const GPIO_PIN = /GPIO_PIN_(\d+)/g;
+const LITERAL_PORT = /^GPIO([A-K])$/;
+const LITERAL_PIN = /^GPIO_PIN_\d+$/;
 
-function parseFile(text, file) {
+/** Collect `#define NAME value` pairs so macro-based pin names resolve. */
+function collectDefines(sources) {
+  const defines = new Map();
+  for (const source of sources) {
+    const text = String(source.text).replace(/\\\r?\n/g, ' ');
+    const re = /^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)[ \t]+(.+?)[ \t]*$/gm;
+    let match;
+    while ((match = re.exec(text))) {
+      const name = match[1];
+      if (LITERAL_PIN.test(name) || LITERAL_PORT.test(name)) continue;
+      let value = match[2].replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/, '').trim();
+      if (!value || /^[+-]?\d+$/.test(value) === false && !/GPIO|_PIN|\(/.test(value) && !/^[A-Za-z_]\w*$/.test(value)) continue;
+      defines.set(name, value);
+    }
+  }
+  return defines;
+}
+
+/** Expand macros until only literals remain (bounded). */
+function expandMacros(expr, defines, depth = 0) {
+  if (depth > 6) return expr;
+  let out = String(expr);
+  out = out.replace(/\b[A-Za-z_]\w*\b/g, (name) => {
+    if (LITERAL_PIN.test(name) || LITERAL_PORT.test(name)) return name;
+    const value = defines.get(name);
+    return value === undefined ? name : value;
+  });
+  return out === expr ? out : expandMacros(out, defines, depth + 1);
+}
+
+function pinsIn(expr) {
+  return [...new Set([...String(expr).matchAll(GPIO_PIN)].map((m) => Number(m[1])))].sort((a, b) => a - b);
+}
+
+function portIn(expr) {
+  const match = /GPIO([A-K])\b/.exec(String(expr)) ?? LITERAL_PORT.exec(String(expr).trim());
+  return match ? `GPIO${match[1]}` : '';
+}
+
+/** A readable label for a pin expression: the macro name if there is one. */
+function labelFor(expr) {
+  const trimmed = String(expr).trim();
+  const single = /^([A-Za-z_]\w*)$/.exec(trimmed);
+  if (!single || LITERAL_PIN.test(single[1])) return '';
+  return single[1].replace(/_?(PIN|GPIO|PORT)$/i, '');
+}
+
+function blankState() {
+  return { pins: [], mode: '', pull: '', speed: '', alternate: '', outputType: '', label: '' };
+}
+
+function parseFile(text, file, defines) {
   const pins = [];
-  let state = { pins: [], mode: '', pull: '', speed: '', alternate: '', outputType: '' };
+  let state = blankState();
   const lines = String(text).split(/\r?\n/);
-  for (const line of lines) {
-    const pinMatch = /(\w+)\.Pin\s*=\s*([^;]+);/.exec(line);
-    if (pinMatch) {
-      state.pins = [...pinMatch[2].matchAll(GPIO_PIN)].map((match) => Number(match[1]));
-      continue;
-    }
-    const mode = /(\w+)\.Mode\s*=\s*([A-Za-z0-9_GPIO]+)\s*;/.exec(line);
-    if (mode && state.pins.length) { state.mode = mode[2]; continue; }
-    const pull = /(\w+)\.Pull\s*=\s*([A-Za-z0-9_GPIO]+)\s*;/.exec(line);
-    if (pull && state.pins.length) { state.pull = pull[2]; continue; }
-    const speed = /(\w+)\.Speed\s*=\s*([A-Za-z0-9_GPIO]+)\s*;/.exec(line);
-    if (speed && state.pins.length) { state.speed = speed[2]; continue; }
-    const alternate = /(\w+)\.Alternate\s*=\s*([A-Za-z0-9_GPIO]+)\s*;/.exec(line);
-    if (alternate && state.pins.length) { state.alternate = alternate[2]; continue; }
+  for (const rawLine of lines) {
+    // Several `s.FIELD = ...;` statements may share one line.
+    for (const part of rawLine.split(/;/)) {
+      const line = part.trim();
+      if (!line) continue;
 
-    const init = /HAL_GPIO_Init\s*\(\s*GPIO([A-K])\s*,/.exec(line);
-    if (init && state.pins.length) {
-      const port = `GPIO${init[1]}`;
-      for (const pin of state.pins) {
-        pins.push({
-          port,
-          pin,
-          mode: state.mode,
-          pull: state.pull,
-          speed: state.speed,
-          alternate: state.alternate,
-          source: file,
-        });
+      const pinMatch = /(\w+)\.Pin\s*=\s*(.+)$/.exec(line);
+      if (pinMatch) {
+        const expr = expandMacros(pinMatch[2], defines);
+        state.pins = pinsIn(expr);
+        state.label = labelFor(pinMatch[2]) || labelFor(expr);
+        continue;
       }
-      state = { pins: [], mode: '', pull: '', speed: '', alternate: '', outputType: '' };
-      continue;
-    }
+      const mode = /(\w+)\.Mode\s*=\s*(.+)$/.exec(line);
+      if (mode && state.pins.length) { state.mode = expandMacros(mode[2], defines).trim(); continue; }
+      const pull = /(\w+)\.Pull\s*=\s*(.+)$/.exec(line);
+      if (pull && state.pins.length) { state.pull = expandMacros(pull[2], defines).trim(); continue; }
+      const speed = /(\w+)\.Speed\s*=\s*(.+)$/.exec(line);
+      if (speed && state.pins.length) { state.speed = expandMacros(speed[2], defines).trim(); continue; }
+      const alternate = /(\w+)\.Alternate\s*=\s*(.+)$/.exec(line);
+      if (alternate && state.pins.length) { state.alternate = expandMacros(alternate[2], defines).trim(); continue; }
+      const outputType = /(\w+)\.OutputType\s*=\s*(.+)$/.exec(line);
+      if (outputType && state.pins.length) { state.outputType = expandMacros(outputType[2], defines).trim(); continue; }
 
-    // Pin used without an init block in the same function: record a weak hint.
-    const write = /HAL_GPIO_(?:WritePin|ReadPin|TogglePin)\s*\(\s*GPIO([A-K])\s*,\s*GPIO_PIN_(\d+)/.exec(line);
-    if (write) {
-      pins.push({ port: `GPIO${write[1]}`, pin: Number(write[2]), mode: 'used', pull: '', speed: '', alternate: '', source: file });
+      const init = /HAL_GPIO_Init\s*\(\s*([^,]+),/.exec(line);
+      if (init && state.pins.length) {
+        const port = portIn(expandMacros(init[1], defines));
+        if (port) {
+          for (const pin of state.pins) {
+            pins.push({
+              port,
+              pin,
+              mode: state.mode,
+              pull: state.pull,
+              speed: state.speed,
+              alternate: state.alternate,
+              outputType: state.outputType,
+              label: state.label,
+              source: file,
+            });
+          }
+        }
+        state = blankState();
+        continue;
+      }
+
+      // Pin used without an init block in the same function: record a weak hint.
+      const write = /HAL_GPIO_(?:WritePin|ReadPin|TogglePin)\s*\(\s*([^,]+),\s*([^,)]+)/.exec(line);
+      if (write) {
+        const port = portIn(expandMacros(write[1], defines));
+        const expr = expandMacros(write[2], defines);
+        for (const pin of pinsIn(expr)) {
+          pins.push({
+            port,
+            pin,
+            mode: 'used',
+            pull: '',
+            speed: '',
+            alternate: '',
+            outputType: '',
+            label: labelFor(write[2]) || labelFor(expr),
+            source: file,
+          });
+        }
+      }
     }
   }
   return pins;
 }
 
+/** Pins from static `{ GPIOx, GPIO_PIN_n }` tables (drivers keep them in arrays). */
+function collectArrayPins(sources, defines) {
+  const pins = [];
+  for (const source of sources) {
+    const text = String(source.text);
+    if (!/HAL_GPIO_Init/.test(text)) continue;
+    // A driver file with a single GPIO_Init struct shape can lend its mode to
+    // the table entries it initializes in a loop.
+    const modes = [...new Set([...text.matchAll(/\.Mode\s*=\s*([^;]+);/g)]
+      .map((match) => expandMacros(match[1], defines).trim())
+      .filter(Boolean))];
+    const pulls = [...new Set([...text.matchAll(/\.Pull\s*=\s*([^;]+);/g)]
+      .map((match) => expandMacros(match[1], defines).trim())
+      .filter(Boolean))];
+    const speeds = [...new Set([...text.matchAll(/\.Speed\s*=\s*([^;]+);/g)]
+      .map((match) => expandMacros(match[1], defines).trim())
+      .filter(Boolean))];
+    const mode = modes.length === 1 ? modes[0] : 'used';
+    const re = /\{\s*(GPIO[A-K]|[A-Za-z_]\w*)\s*,\s*([^{}]{1,80})\}/g;
+    let match;
+    while ((match = re.exec(text))) {
+      const port = portIn(expandMacros(match[1], defines));
+      const numbers = pinsIn(expandMacros(match[2], defines));
+      if (!port || !numbers.length) continue;
+      for (const pin of numbers) {
+        pins.push({
+          port,
+          pin,
+          mode,
+          pull: pulls.length === 1 ? pulls[0] : '',
+          speed: speeds.length === 1 ? speeds[0] : '',
+          alternate: '',
+          outputType: '',
+          label: '',
+          source: source.file,
+        });
+      }
+    }
+  }
+  return pins;
+}
+
+/** Sort by port, then by pin *number* (PA9 before PA10). */
+function comparePins(a, b) {
+  if (a.port !== b.port) return a.port < b.port ? -1 : 1;
+  return Number(a.pin) - Number(b.pin);
+}
+
 /** Parse `[{file,text}]` into pin records. */
 export function parsePinAssignments(sources) {
+  const defines = collectDefines(sources);
   const pins = [];
-  for (const source of sources) pins.push(...parseFile(source.text, source.file));
+  for (const source of sources) pins.push(...parseFile(source.text, source.file, defines));
+  for (const source of sources) pins.push(...collectArrayPins([source], defines));
   const unique = new Map();
   for (const pin of pins) {
+    if (!pin.port) continue;
     const key = `${pin.port}.${pin.pin}`;
     const existing = unique.get(key);
     if (!existing || (existing.mode === 'used' && pin.mode !== 'used')) unique.set(key, pin);
   }
-  return [...unique.values()].sort((a, b) => `${a.port}${a.pin}`.localeCompare(`${b.port}${b.pin}`));
+  return [...unique.values()].sort(comparePins);
 }
 
 /** Pins declared by a parsed `.ioc`. */
@@ -127,7 +259,7 @@ export function buildPinMap(dir, ioc, sources = collectSources(dir)) {
     const existing = merged.get(key) ?? { port: pin.port, pin: pin.pin, mode: '', pull: '', speed: '', alternate: '', source: '' };
     merged.set(key, { ...existing, label: pin.label || existing.label || '', mode: pin.mode || existing.mode });
   }
-  const pins = [...merged.values()].sort((a, b) => `${a.port}${a.pin}`.localeCompare(`${b.port}${b.pin}`));
+  const pins = [...merged.values()].sort(comparePins);
   const ports = {};
   for (const pin of pins) {
     ports[pin.port] = ports[pin.port] ?? [];

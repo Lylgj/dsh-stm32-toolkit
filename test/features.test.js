@@ -168,6 +168,39 @@ test('pin map merges source init blocks and .ioc pins', () => {
   assert.ok(map.pins.some((pin) => pin.port === 'GPIOA' && pin.pin === 5));
 });
 
+test('pin map resolves #define names and static pin tables', () => {
+  const text = [
+    '#define LED_PORT GPIOE',
+    '#define LED1_PIN GPIO_PIN_2',
+    '#define LED2_PIN GPIO_PIN_3',
+    'typedef struct { GPIO_TypeDef *GPIOx; uint16_t GPIO_Pin; } LED;',
+    'static LED leds[] = { {LED_PORT, LED1_PIN}, {GPIOE, LED2_PIN} };',
+    'void init(void) {',
+    '  GPIO_InitTypeDef s;',
+    '  s.Mode = GPIO_MODE_OUTPUT_PP;',
+    '  s.Pull = GPIO_NOPULL;',
+    '  for (int i = 0; i < 2; i++) {',
+    '    s.Pin = leds[i].GPIO_Pin;',
+    '    HAL_GPIO_Init(leds[i].GPIOx, &s);',
+    '  }',
+    '}',
+  ].join('\n');
+  const pins = parsePinAssignments([{ file: 'led.c', text }]);
+  const pe2 = pins.find((pin) => pin.port === 'GPIOE' && pin.pin === 2);
+  const pe3 = pins.find((pin) => pin.port === 'GPIOE' && pin.pin === 3);
+  assert.ok(pe2, 'macro port/pin resolved from table');
+  assert.ok(pe3, 'array entry with macro pin resolved');
+  assert.equal(pe2.mode, 'GPIO_MODE_OUTPUT_PP');
+
+  const direct = parsePinAssignments([{
+    file: 'uart.c',
+    text: '#define UART_TX_PIN GPIO_PIN_6\n#define UART_TX_PORT GPIOB\nvoid f(void){GPIO_InitTypeDef s; s.Pin = UART_TX_PIN; s.Mode = GPIO_MODE_AF_PP; HAL_GPIO_Init(UART_TX_PORT, &s);}',
+  }]);
+  const tx = direct.find((pin) => pin.port === 'GPIOB' && pin.pin === 6);
+  assert.ok(tx, 'macro HAL_GPIO_Init port resolved');
+  assert.equal(tx.mode, 'GPIO_MODE_AF_PP');
+});
+
 test('install helpers pick the Windows asset and find binaries recursively', () => {
   const release = {
     tag_name: 'v14.3.1-1.1',
