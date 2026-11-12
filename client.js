@@ -362,8 +362,8 @@ window.__ModuleLoader__.load({
       const selectStyle = {
         appearance: 'none', WebkitAppearance: 'none', color: 'inherit', cursor: 'pointer',
         backgroundColor: 'transparent', border: '1px solid rgba(128,128,128,.32)',
-        borderRadius: '999px', height: '24px', boxSizing: 'border-box',
-        padding: '0 22px 0 11px', font: 'inherit', fontSize: '11.5px',
+        borderRadius: '999px', height: '22px', boxSizing: 'border-box',
+        padding: '0 20px 0 10px', font: 'inherit', fontSize: '11px',
         backgroundImage: caret, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center',
       };
       const quick = (key, label, title, options) => h('label', { className: 'stm32-toolbar-field', key, title }, [
