@@ -71,6 +71,9 @@ window.__ModuleLoader__.load({
       .stm32-title { font-weight:600; font-size:12px; margin-right:6px; letter-spacing:.02em; }
       .stm32-chip { padding:1px 7px; border-radius:999px; border:1px solid rgba(128,128,128,.32);
         opacity:.75; font-size:11px; white-space:nowrap; }
+      .stm32-chip-btn { cursor:pointer; background:none; color:inherit; opacity:.9;
+        max-width:260px; overflow:hidden; text-overflow:ellipsis; }
+      .stm32-chip-btn:hover { border-color:#3b82f6; opacity:1; }
       .stm32-btn { display:inline-flex; align-items:center; justify-content:center; gap:4px;
         padding:3px 10px; border-radius:5px; border:1px solid rgba(128,128,128,.32);
         background:rgba(128,128,128,.08); color:inherit; cursor:pointer; font-size:12px; line-height:1.5; }
@@ -159,6 +162,11 @@ window.__ModuleLoader__.load({
       .stm32-set-check { display:inline-flex; align-items:center; gap:7px; font-size:12px;
         color:inherit; cursor:pointer; padding-top:4px; }
       .stm32-set-actions { display:flex; align-items:center; gap:8px; padding:2px 2px 0; }
+      /* Keep 保存 reachable while scrolling a long settings form. */
+      .stm32-settings-embed .stm32-set-actions {
+        position:sticky; bottom:0; z-index:3; padding:8px 2px;
+        background:var(--dsw-alias-surface-1, rgba(127,127,127,.08));
+        backdrop-filter:blur(6px); border-top:1px solid rgba(128,128,128,.18); }
       .stm32-set-actions .stm32-btn { padding:6px 16px; border-radius:6px; font-size:12.5px; }
       .stm32-set-inputwrap { display:flex; gap:6px; min-width:0; align-items:stretch; }
       .stm32-set-inputwrap .stm32-set-input { flex:1; min-width:0; }
@@ -190,6 +198,8 @@ window.__ModuleLoader__.load({
         cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
       .stm32-picker-item:hover { background:rgba(128,128,128,.16); }
       .stm32-picker-item.up { opacity:.65; }
+      .stm32-picker-item.file { font-family:var(--dsw-font-mono,Consolas,monospace); font-size:11.5px; }
+      .stm32-picker-hint { flex:1; font-size:11px; opacity:.55; text-align:left; }
       .stm32-picker-ico { opacity:.5; }
       .stm32-picker-empty { padding:28px 8px; text-align:center; opacity:.55; }
       .stm32-picker-error { padding:6px 14px; color:#e05c5c; font-size:11px; }
@@ -260,7 +270,7 @@ window.__ModuleLoader__.load({
 
     // ---------------------------------------------------------- toolbar
 
-    function Toolbar({ state, run, busy, tab, setTab }) {
+    function Toolbar({ state, run, busy, tab, setTab, onSwitchProject }) {
       const debug = state?.debug ?? {};
       const project = state?.project;
       const buildRunning = Boolean(state?.lastBuild?.running);
@@ -278,6 +288,12 @@ window.__ModuleLoader__.load({
 
       return h('div', { className: 'stm32-toolbar' }, [
         h('span', { className: 'stm32-title', key: 't' }, 'STM32'),
+        h('button', {
+          key: 'proj',
+          className: 'stm32-chip stm32-chip-btn',
+          title: project?.root ? `${project.root}（点击切换工程）` : '选择工程目录',
+          onClick: onSwitchProject,
+        }, `工程: ${project?.root ? (project.root.split(/[\\/]/).filter(Boolean).pop() || project.root) : '未设置'} ▾`),
         project ? h('span', { className: 'stm32-chip', key: 'dev', title: project.root }, project.device || '未知芯片') : null,
         project && project.target ? h('span', { className: 'stm32-chip', key: 'tgt' }, project.target) : null,
         project?.backend ? h('span', { className: 'stm32-chip', key: 'be' }, project.backend === 'keil' ? 'Keil UV4' : 'GCC') : null,
@@ -846,6 +862,7 @@ window.__ModuleLoader__.load({
     function Workbench() {
       const { state, error, reload } = useServiceState();
       const [tab, setTab] = useState('console');
+      const [switchProject, setSwitchProject] = useState(false);
       const [busy, setBusy] = useState(0);
       const run = useAction(setBusy);
       const doRun = useCallback(async (action, params = {}) => {
@@ -886,7 +903,7 @@ window.__ModuleLoader__.load({
       else body = h(StackTab, { state, run, disabled: !active });
 
       return h('div', { className: 'stm32-root' }, [
-        h(Toolbar, { key: 'tb', state, run: doRun, busy, tab, setTab }),
+        h(Toolbar, { key: 'tb', state, run: doRun, busy, tab, setTab, onSwitchProject: () => setSwitchProject(true) }),
         h(TabBar, { key: 'tabs', tab, setTab }),
         h('div', { className: 'stm32-body', key: 'body' }, [
           project && project.errors?.length
@@ -894,6 +911,18 @@ window.__ModuleLoader__.load({
             : null,
           body,
         ]),
+        switchProject ? h(PathPicker, {
+          key: 'switcher',
+          initial: project?.root || '',
+          mode: 'dir',
+          title: '选择工程目录',
+          onPick: async (chosen) => {
+            setSwitchProject(false);
+            try { await doRun('config', { patch: { projectDir: chosen } }); } catch { /* 日志里会有错误 */ }
+            reload();
+          },
+          onClose: () => setSwitchProject(false),
+        }) : null,
         h('div', { className: 'stm32-status', key: 'st' }, [
           h('span', { key: 'd' }, [
             h('span', { className: `stm32-dot ${debug.active ? (debug.running ? 'busy' : 'on') : ''}` }),
@@ -1122,45 +1151,65 @@ window.__ModuleLoader__.load({
 
     // -------------------------------------------------------- directory picker
 
-    function DirPicker({ initial, onPick, onClose }) {
+    function PathPicker({ initial, mode = 'dir', exts = [], title, onPick, onClose }) {
       const [path, setPath] = useState(initial || '');
-      const [view, setView] = useState({ dirs: [], parent: null, drives: [] });
+      const [view, setView] = useState({ dirs: [], files: [], parent: null, drives: [], selected: '' });
       const [error, setError] = useState('');
       const [loading, setLoading] = useState(false);
+      const extKey = exts.join(',');
 
       const browse = useCallback(async (target) => {
         setLoading(true);
         setError('');
         try {
-          const json = await api('fs', { path: target ?? '' }, { method: 'GET' });
-          if (!json.ok) throw new Error(json.error ?? '无法读取目录');
+          const json = await api('fs', { path: target ?? '', ext: extKey }, { method: 'GET' });
+          if (!json.ok) throw new Error(json.error ?? '无法读取路径');
           setPath(json.path ?? '');
-          setView({ dirs: json.dirs ?? [], parent: json.parent ?? null, drives: json.drives ?? [] });
+          setView({
+            dirs: json.dirs ?? [],
+            files: json.files ?? [],
+            parent: json.parent ?? null,
+            drives: json.drives ?? [],
+            selected: json.selected ?? '',
+          });
         } catch (e) {
           setError(String(e?.message ?? e));
         } finally {
           setLoading(false);
         }
-      }, []);
+      }, [extKey]);
 
       useEffect(() => { browse(initial || ''); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
       const items = [
         view.parent ? h('div', { key: '..', className: 'stm32-picker-item up', onClick: () => browse(view.parent) }, '⬆ 上一级') : null,
         ...(view.dirs ?? []).map((d) => h('div', {
-          key: d.path,
+          key: `d:${d.path}`,
           className: 'stm32-picker-item',
           title: d.path,
           onClick: () => browse(d.path),
         }, h('span', { className: 'stm32-picker-ico' }, '▸'), d.name)),
+        ...(view.files ?? []).map((f) => h('div', {
+          key: `f:${f.path}`,
+          className: 'stm32-picker-item file',
+          title: f.path,
+          onClick: () => onPick(f.path),
+        }, h('span', { className: 'stm32-picker-ico' }, '▪'), f.name)),
       ].filter(Boolean);
+
+      let list;
+      if (loading) list = [h('div', { key: 'loading', className: 'stm32-picker-empty' }, '读取中…')];
+      else if (!items.length) {
+        list = [h('div', { key: 'empty', className: 'stm32-picker-empty' }, error ? '无法读取该目录'
+          : ((view.drives ?? []).length ? '选择一个磁盘' : '没有子目录'))];
+      } else list = items;
 
       return h('div', {
         className: 'stm32-picker-mask',
         onMouseDown: (event) => { if (event.target === event.currentTarget) onClose(); },
       }, h('div', { className: 'stm32-picker' }, [
         h('div', { className: 'stm32-picker-head' }, [
-          h('span', { className: 'stm32-picker-title' }, '选择工程目录'),
+          h('span', { className: 'stm32-picker-title' }, title || (mode === 'file' ? '选择文件' : '选择目录')),
           h('span', { className: 'stm32-picker-path', title: path || '此电脑' }, path || '此电脑'),
         ]),
         (view.drives ?? []).length
@@ -1170,22 +1219,17 @@ window.__ModuleLoader__.load({
             onClick: () => browse(d.path),
           }, d.name)))
           : null,
-        h('div', { className: 'stm32-picker-list' }, errorsOrItems(items, loading, view, error)),
+        h('div', { className: 'stm32-picker-list' }, list),
         error ? h('div', { className: 'stm32-picker-error' }, error) : null,
         h('div', { className: 'stm32-picker-foot' }, [
+          h('span', { className: 'stm32-picker-hint' },
+            mode === 'file' ? '点击文件名即可选中' : '进入目标目录后点“选择此目录”'),
           h('button', { className: 'stm32-btn', onClick: onClose }, '取消'),
-          h('button', { className: 'stm32-btn primary', disabled: !path, onClick: () => onPick(path) }, '选择此目录'),
+          mode === 'dir'
+            ? h('button', { className: 'stm32-btn primary', disabled: !path, onClick: () => onPick(path) }, '选择此目录')
+            : null,
         ]),
       ]));
-    }
-
-    function errorsOrItems(items, loading, view, error) {
-      if (loading) return [h('div', { key: 'loading', className: 'stm32-picker-empty' }, '读取中…')];
-      if (!items.length) {
-        return [h('div', { key: 'empty', className: 'stm32-picker-empty' },
-          error ? '无法读取该目录' : ((view.drives ?? []).length ? '选择一个磁盘' : '没有子目录'))];
-      }
-      return items;
     }
 
     function SettingsPage({ embedded = false } = {}) {
@@ -1193,11 +1237,19 @@ window.__ModuleLoader__.load({
       const [checks, setChecks] = useState(null);
       const [message, setMessage] = useState('');
       const [saving, setSaving] = useState(false);
-      const [picker, setPicker] = useState(false);
+      const [picker, setPicker] = useState(null);
+      const [ports, setPorts] = useState([]);
       const [env, setEnv] = useState(null);
       const [installing, setInstalling] = useState(false);
       const [exporting, setExporting] = useState(false);
       useEffect(() => { ensureStyle(document); api('config').then((json) => { if (json.ok) setConfig(json.config); }).catch(() => {}); }, []);
+      const refreshPorts = useCallback(async () => {
+        try {
+          const json = await api('serialPorts', {});
+          if (json.ok) setPorts(json.ports ?? []);
+        } catch { /* 串口枚举失败不影响其它设置 */ }
+      }, []);
+      useEffect(() => { refreshPorts(); }, [refreshPorts]);
       const refreshEnv = useCallback(async () => {
         try {
           const json = await api('env', {}, { method: 'GET' });
@@ -1278,7 +1330,7 @@ window.__ModuleLoader__.load({
       if (!config) return h('div', { className: 'stm32-empty' }, '读取配置…');
 
       const set = (key) => (event) => setConfig({ ...config, [key]: event.target.value });
-      const field = (key, label, placeholder, hint) => {
+      const field = (key, label, placeholder, hint, opts = {}) => {
         const input = h('input', {
           className: 'stm32-set-input',
           value: config[key] ?? '',
@@ -1286,10 +1338,15 @@ window.__ModuleLoader__.load({
           spellCheck: false,
           onChange: set(key),
         });
-        const control = key === 'projectDir'
+        const control = opts.mode
           ? h('div', { className: 'stm32-set-inputwrap' }, [
             input,
-            h('button', { className: 'stm32-set-browse', type: 'button', onClick: () => setPicker(true) }, '浏览…'),
+            h('button', {
+              className: 'stm32-set-browse',
+              type: 'button',
+              title: opts.mode === 'file' ? '浏览文件' : '浏览目录',
+              onClick: () => setPicker({ key, mode: opts.mode, exts: opts.exts ?? [], title: opts.title }),
+            }, '浏览…'),
           ])
           : input;
         return h('div', { className: 'stm32-set-row', key }, [
@@ -1335,9 +1392,9 @@ window.__ModuleLoader__.load({
           h('p', null, '配置项目目录、编译器与调试器路径；留空的项会自动探测。修改后点“保存”，面板与工具会立刻生效。'),
         ]),
         section('工程', [
-          field('projectDir', '工程目录', 'D:\\path\\to\\project', '留空则使用当前会话目录；支持 Keil .uvprojx、CMake、Makefile 工程。'),
+          field('projectDir', '工程目录', 'D:\\path\\to\\project', '留空则使用当前会话目录；支持 Keil .uvprojx、CMake、Makefile 工程。', { mode: 'dir', title: '选择工程目录' }),
           field('device', '芯片型号', 'STM32F407VGTx', '留空则从 .uvprojx 自动读取，用于匹配 OpenOCD target 与 SVD。'),
-          field('svdPath', 'SVD 文件', '可选，留空自动查找或下载', '寄存器面板使用；留空时依次在 Keil Pack、缓存、cmsis-svd 中查找。'),
+          field('svdPath', 'SVD 文件', '可选，留空自动查找或下载', '寄存器面板使用；留空时依次在 Keil Pack、缓存、cmsis-svd 中查找。', { mode: 'file', exts: ['.svd'], title: '选择 SVD 文件' }),
           h('div', { className: 'stm32-set-row', key: 'exportCmake' }, [
             h('div', { className: 'stm32-set-label' }, '开源构建'),
             h('div', { className: 'stm32-set-control' }, [
@@ -1349,12 +1406,12 @@ window.__ModuleLoader__.load({
           ]),
         ]),
         section('工具链', [
-          field('uv4Path', 'Keil UV4', 'C:\\Keil_v5\\UV4\\UV4.exe', '使用 Keil/AC5 工程构建时需要；纯开源工具链可留空。'),
-          field('openocdPath', 'OpenOCD', 'C:\\...\\bin\\openocd.exe', '下载与调试都通过它连接 ST-Link / CMSIS-DAP / J-Link。'),
-          field('openocdScripts', 'OpenOCD scripts', '可选，对应 -s 参数目录', 'interface/ 与 target/ 配置文件所在目录；留空从 OpenOCD 安装位置推断。'),
-          field('gdbPath', 'arm-none-eabi-gdb', '自动从 PATH 查找', '调试会话使用 GDB/MI 协议；留空自动探测。'),
-          field('gccPath', 'arm-none-eabi-gcc', '自动从 PATH 查找', '开源工具链构建时使用；Keil 构建不需要。'),
-          field('ninjaPath', 'Ninja / Make', '自动从 PATH 查找', 'CMake 生成构建文件后调用的构建工具；填 ninja.exe，留空会自动探测。'),
+          field('uv4Path', 'Keil UV4', 'C:\\Keil_v5\\UV4\\UV4.exe', '使用 Keil/AC5 工程构建时需要；纯开源工具链可留空。', { mode: 'file', exts: ['.exe'], title: '选择 UV4.exe' }),
+          field('openocdPath', 'OpenOCD', 'C:\\...\\bin\\openocd.exe', '下载与调试都通过它连接 ST-Link / CMSIS-DAP / J-Link。', { mode: 'file', exts: ['.exe'], title: '选择 openocd.exe' }),
+          field('openocdScripts', 'OpenOCD scripts', '可选，对应 -s 参数目录', 'interface/ 与 target/ 配置文件所在目录；留空从 OpenOCD 安装位置推断。', { mode: 'dir', title: '选择 OpenOCD scripts 目录' }),
+          field('gdbPath', 'arm-none-eabi-gdb', '自动从 PATH 查找', '调试会话使用 GDB/MI 协议；留空自动探测。', { mode: 'file', exts: ['.exe'], title: '选择 arm-none-eabi-gdb.exe' }),
+          field('gccPath', 'arm-none-eabi-gcc', '自动从 PATH 查找', '开源工具链构建时使用；Keil 构建不需要。', { mode: 'file', exts: ['.exe'], title: '选择 arm-none-eabi-gcc.exe' }),
+          field('ninjaPath', 'Ninja / Make', '自动从 PATH 查找', 'CMake 生成构建文件后调用的构建工具；填 ninja.exe，留空会自动探测。', { mode: 'file', exts: ['.exe'], title: '选择 ninja.exe' }),
         ]),
         section('调试器', [
           h('div', { className: 'stm32-set-row', key: 'probe' }, [
@@ -1391,7 +1448,26 @@ window.__ModuleLoader__.load({
           checkRow('flashReset', '复位', '下载完成后复位并运行'),
         ]),
         section('串口', [
-          field('serialPort', '默认串口', 'COM3', '串口面板的默认端口；留空则在面板里选择。'),
+          h('div', { className: 'stm32-set-row', key: 'serialPort' }, [
+            h('div', { className: 'stm32-set-label' }, '默认串口'),
+            h('div', { className: 'stm32-set-control' }, [
+              h('div', { className: 'stm32-set-inputwrap' }, [
+                h('select', {
+                  className: 'stm32-set-select',
+                  value: config.serialPort ?? '',
+                  onChange: set('serialPort'),
+                }, [
+                  h('option', { key: '', value: '' }, '（不指定）'),
+                  ...ports.map((p) => h('option', { key: p.port, value: p.port }, p.label || p.port)),
+                  config.serialPort && !ports.some((p) => p.port === config.serialPort)
+                    ? h('option', { key: '__cur', value: config.serialPort }, config.serialPort)
+                    : null,
+                ]),
+                h('button', { className: 'stm32-set-browse', type: 'button', title: '重新枚举串口', onClick: refreshPorts }, '刷新'),
+              ]),
+              h('div', { className: 'stm32-set-hint' }, '串口面板的默认端口；留空则在面板里选择。'),
+            ]),
+          ]),
           field('serialBaud', '默认波特率', '115200', '串口面板打开时的默认波特率。'),
         ]),
         section('RTT 日志', [
@@ -1399,8 +1475,8 @@ window.__ModuleLoader__.load({
           field('rttChannel', 'RTT 通道', '0', '默认读取 channel 0。'),
         ]),
         section('符号与引脚', [
-          field('symbolFile', '符号表文件', '可选：.map / .elf', '留空则自动在工程目录里找 .map / .elf，用于符号查找与引脚图。'),
-          field('iocFile', 'CubeMX .ioc', '可选：工程 .ioc 文件', '留空则自动在工程目录里找；引脚图会合并 .ioc 与源码中的配置。'),
+          field('symbolFile', '符号表文件', '可选：.map / .elf', '留空则自动在工程目录里找 .map / .elf，用于符号查找与引脚图。', { mode: 'file', exts: ['.map', '.elf', '.axf'], title: '选择符号表 / ELF' }),
+          field('iocFile', 'CubeMX .ioc', '可选：工程 .ioc 文件', '留空则自动在工程目录里找；引脚图会合并 .ioc 与源码中的配置。', { mode: 'file', exts: ['.ioc'], title: '选择 .ioc 文件' }),
         ]),
         section('多核', [
           selectRow('core', '目标内核', [
@@ -1433,10 +1509,13 @@ window.__ModuleLoader__.load({
             h('span', { className: 'stm32-check-value', title: row.value }, row.value),
           ]))),
         ]) : null,
-        picker ? h(DirPicker, {
-          initial: config.projectDir || '',
-          onPick: (chosen) => { setConfig({ ...config, projectDir: chosen }); setPicker(false); },
-          onClose: () => setPicker(false),
+        picker ? h(PathPicker, {
+          initial: config[picker.key] || '',
+          mode: picker.mode,
+          exts: picker.exts,
+          title: picker.title,
+          onPick: (chosen) => { setConfig({ ...config, [picker.key]: chosen }); setPicker(null); },
+          onClose: () => setPicker(null),
         }) : null,
       ]);
     }

@@ -5,8 +5,8 @@
  * used by the panel and (through the bundle) the panel itself.
  */
 
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readdirSync, statSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { registerCommands } from './commands.js';
 import { defineToolCompat } from './define-tool.js';
 import { Stm32Service } from './service.js';
@@ -87,7 +87,7 @@ async function handleRequest(req, res, service) {
       return sendJson(res, 200, { ok: true, artifact: project.artifact, artifacts: project.artifacts ?? [] });
     }
     if (method === 'GET' && route === 'fs') {
-      return sendJson(res, 200, listDirectory(url.searchParams.get('path')));
+      return sendJson(res, 200, listDirectory(url.searchParams.get('path'), url.searchParams.get('ext') ?? ''));
     }
     if (method === 'GET' && route === 'serial') {
       return sendJson(res, 200, { ok: true, serial: service.serialState() });
@@ -309,10 +309,14 @@ function summarizeProject(info) {
 }
 
 /**
- * Directory browser used by the settings page: no path → list drive roots,
- * otherwise list the sub-directories of `path`.
+ * Path browser used by the settings page and the project switcher.
+ *
+ * Without a path it lists drive roots. With a path it lists the sub-directories
+ * (always) and, when `ext` is given (comma separated, e.g. `.exe,.bat`), the
+ * files that match those extensions. Passing a file path opens its directory
+ * and reports the file as `selected`.
  */
-function listDirectory(raw) {
+export function listDirectory(raw, ext) {
   const input = (raw ?? '').trim();
   if (!input) {
     const drives = [];
@@ -320,15 +324,48 @@ function listDirectory(raw) {
       const root = `${letter}:\\`;
       if (existsSync(root)) drives.push({ name: root, path: root });
     }
-    return { ok: true, path: '', parent: null, dirs: drives, drives };
+    return { ok: true, path: '', parent: null, dirs: drives, drives, files: [], selected: '' };
   }
-  const dir = resolve(input);
-  if (!existsSync(dir)) return { ok: false, error: `目录不存在：${dir}` };
+
+  let dir = resolve(input);
+  let selected = '';
+  let stats = null;
+  try {
+    stats = statSync(dir);
+  } catch {
+    return { ok: false, error: `路径不存在：${dir}` };
+  }
+  if (stats.isFile()) {
+    selected = dir;
+    dir = dirname(dir);
+  } else if (!stats.isDirectory()) {
+    return { ok: false, error: `不是目录：${dir}` };
+  }
+
   const dirs = listDirs(dir)
     .map((p) => ({ name: p.split(/[\\/]/).pop() || p, path: p }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+
+  const wanted = String(ext ?? '')
+    .split(',')
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  let files = [];
+  if (wanted.length) {
+    try {
+      files = readdirSync(dir, { withFileTypes: true })
+        .filter((entry) => entry.isFile())
+        .map((entry) => entry.name)
+        .filter((name) => wanted.some((suffix) => name.toLowerCase().endsWith(suffix)))
+        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+        .map((name) => ({ name, path: resolve(dir, name) }));
+    } catch {
+      files = [];
+    }
+  }
+
   const parent = resolve(dir, '..');
-  return { ok: true, path: dir, parent: parent === dir ? null : parent, dirs };
+  return { ok: true, path: dir, parent: parent === dir ? null : parent, dirs, files, selected };
 }
 
 function readBody(req) {

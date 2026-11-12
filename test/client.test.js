@@ -73,3 +73,16 @@ test('client bundle registers settings section and renders with no config', () =
   const tree = section.component({});
   assert.match(renderNode(tree), /读取配置/);
 });
+
+test('settings form gives every path field a browse button', () => {
+  const section = slots.find((entry) => entry.spec.name === 'settings.section');
+  assert.ok(section, 'settings.section should stay registered');
+  // Pretend the config request already finished.
+  hooks = [{ projectDir: 'D:\\lgj\\mcu_acc_app', device: 'STM32F407VGTx', svdPath: '' }];
+  hookIndex = 0;
+  const html = renderNode(section.component({}));
+  const browse = (html.match(/浏览…/g) || []).length;
+  assert.ok(browse >= 9, `path fields with a browse button: ${browse}`);
+  assert.match(html, /默认串口/);
+  assert.match(html, /保存/);
+});

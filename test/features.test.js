@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { exportKeilToCmake } from '../src/engine/export.js';
+import { listDirectory } from '../src/index.js';
 import {
   cpuFlagsFor,
   createIoc,
@@ -273,4 +274,27 @@ test('Keil .uvprojx exports to a CMake/GCC tree', () => {
   assert.match(linker, /ORIGIN = 0x8000000, LENGTH = 1024K/);
   assert.match(linker, /ORIGIN = 0x20000000, LENGTH = 128K/);
   assert.ok(existsSync(join(result.dir, 'startup_stm32.s')));
+});
+
+test('fs listing returns dirs and extension-filtered files', () => {
+  const dir = tempDir();
+  mkdirSync(join(dir, 'sub'));
+  writeFileSync(join(dir, 'app.exe'), 'x');
+  writeFileSync(join(dir, 'readme.txt'), 'x');
+
+  const listing = listDirectory(dir, '.exe');
+  assert.equal(listing.ok, true);
+  assert.ok(listing.dirs.some((d) => d.name === 'sub'));
+  assert.deepEqual(listing.files.map((f) => f.name), ['app.exe']);
+  assert.equal(listing.files[0].path, join(dir, 'app.exe'));
+
+  // Handing over a file path opens its directory and reports the selection.
+  const selected = listDirectory(join(dir, 'app.exe'));
+  assert.equal(selected.ok, true);
+  assert.equal(selected.path, dir);
+  assert.equal(selected.selected, join(dir, 'app.exe'));
+
+  const roots = listDirectory('');
+  assert.equal(roots.ok, true);
+  assert.ok(roots.drives.length > 0);
 });

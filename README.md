@@ -14,7 +14,7 @@ DeepSeek Harness 的 STM32 开发插件。参照 Keil MDK 的工作方式，把�
 - **符号表 / 引脚图**：解析 Keil `.map`、GNU `.map`、`nm` 或 ELF 符号表；静态扫描 `HAL_GPIO_Init`、`#define` 引脚宏和 `{GPIOx, GPIO_PIN_n}` 静态表生成引脚占用图。
 - **CubeMX `.ioc`**：读取/修改 `.ioc`，或一键生成 CMake 工程骨架（`.ioc` + `CMakeLists.txt` + 链接脚本 + startup + main.c）。
 - **多核**：识别 H7 双核，调试时可切换 `core 0/1`（OpenOCD `-c core N`）。
-- **工程目录选择器**：设置页里点「浏览…」直接选目录，不用手敲路径。
+- **路径选择器**：设置里每个路径项（工程目录、SVD、UV4、OpenOCD、GCC、GDB、Ninja、符号表、.ioc）都有「浏览…」按钮，目录/文件按扩展名过滤；工作台工具栏的工程名可直接点开切换工程。
 
 ## 安装
 
@@ -151,7 +151,7 @@ client.js           Web 工作台与设置页（React，无构建步骤）
 
 ## 验证状态（2026-11-11）
 
-- `npm test`：**37 个测试全部通过**（SVD/MI/uvprojx 解析、构建日志、OpenOCD 下载命令、HTTP 路由、工具执行、斜杠命令、串口桥、`.ioc`、map/ELF 符号、引脚扫描（含 `#define` 宏与静态表）、工具链安装参数、Keil→CMake 导出、设置页渲染冒烟）。
+- `npm test`：**39 个测试全部通过**（SVD/MI/uvprojx 解析、构建日志、OpenOCD 下载命令、HTTP 路由、工具执行、斜杠命令、串口桥、`.ioc`、map/ELF 符号、引脚扫描（含 `#define` 宏与静态表）、工具链安装参数、Keil→CMake 导出、设置页与路径选择器渲染冒烟）。
 - 真实 Keil 工程 `D:\lgj\mcu_acc_app\MDK-ARM\Project.uvprojx` 解析通过：STM32F407VGTx / STM324xG_EVAL / 152 个源文件 / IROM 0x08000000 1MB / IRAM 0x20000000 128KB。
 - 同一工程导出 CMake 通过：150 个可编译源文件、18 个 include、3 个宏；Keil 汇编启动文件被 GNU 启动文件替换，FreeRTOS 的 RVDS 移植层自动换成 GCC 版本。
 - 真实 SVD 下载并解析通过：`STM32F407.svd` 91 个外设，GPIOA 0x40020000，MODER 16 个位域。
