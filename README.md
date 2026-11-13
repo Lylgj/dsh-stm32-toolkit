@@ -20,12 +20,9 @@ DeepSeek Harness 的 STM32 开发插件。参照 Keil MDK 的工作方式，把�
 
 ## 界面
 
-<p>
-  <img src="docs/assets/screenshots/pinout.png" alt="引脚图" width="49%">
-  <img src="docs/assets/screenshots/serial.png" alt="串口监视器" width="49%">
-</p>
+<p><img src="docs/assets/screenshots/console.png" alt="STM32 工作台" width="100%"></p>
 
-左：工具栏（工程 / 调试器 / 擦除方式 / 编译 / 下载 / 调试）+ 页签（控制台、寄存器、内存、断点、调用栈、变量、反汇编、串口、RTT、符号、引脚、设置），这里展示的是引脚图。右：串口监视器，枚举串口、选波特率、收发文本或 HEX。
+STM32 工作台：顶部是工程、调试器、擦除方式和编译 / 下载 / 调试；下面是控制台、寄存器、内存、断点、调用栈、变量、反汇编、串口、RTT、符号、引脚、设置这些页签，编译日志和状态提示都输出在控制台里。
 
 ## 安装
 
