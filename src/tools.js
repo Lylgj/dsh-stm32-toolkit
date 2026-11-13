@@ -568,7 +568,7 @@ function sanitizeProject(info) {
     pack: info.pack,
     target: info.uvprojx?.target ?? '',
     targets: info.uvprojx?.targets ?? [],
-    backend: info.backend,
+    backend: info.backend ?? '',
     artifact: info.artifact,
     artifacts: (info.artifacts ?? []).slice(0, 8).map((a) => ({ path: a.path, ext: a.ext, size: a.size })),
     svd: info.svd,

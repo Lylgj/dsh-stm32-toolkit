@@ -216,6 +216,7 @@ export async function inspectProject(dir, config = {}) {
     artifacts: [],
     buildDir: '',
     svd: null,
+    backend: '',
     errors: [],
   };
   if (!project) {
