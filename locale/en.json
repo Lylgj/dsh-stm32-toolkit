@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "STM32 Toolkit",
-    "description": "Build, flash and debug STM32 with Keil or arm-none-eabi + OpenOCD/GDB: breakpoints, core and peripheral registers, memory and disassembly.",
+    "description": "Build, flash and debug STM32 without leaving DSH.",
     "detail": "README.md"
   }
 }
