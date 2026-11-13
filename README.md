@@ -1,5 +1,7 @@
 # dsh-stm32-toolkit
 
+<p align="center"><img src="docs/assets/banner.png" alt="dsh-stm32-toolkit" width="100%"></p>
+
 DeepSeek Harness 的 STM32 开发插件。参照 Keil MDK 的工作方式，把「工程识别 → 编译 → 下载 → 在线调试 → 断点 / 寄存器 / 内存 / 反汇编」搬进 DSH：
 
 - **侧边栏 STM32 工作台**：编译、下载、启动/停止调试、暂停/继续、单步、复位，日志、内核寄存器、外设寄存器、内存、断点/监视点、调用栈、变量求值、反汇编、串口监视器、RTT 日志、符号表、引脚图、设置（工程与工具链配置直接内嵌在工作台里，不用再开设置窗口）。
@@ -15,6 +17,15 @@ DeepSeek Harness 的 STM32 开发插件。参照 Keil MDK 的工作方式，把�
 - **CubeMX `.ioc`**：读取/修改 `.ioc`，或一键生成 CMake 工程骨架（`.ioc` + `CMakeLists.txt` + 链接脚本 + startup + main.c）。
 - **多核**：识别 H7 双核，调试时可切换 `core 0/1`（OpenOCD `-c core N`）。
 - **路径选择器（Windows 资源管理器风格）**：设置里每个路径项（工程目录、SVD、UV4、OpenOCD、GCC、GDB、Ninja、符号表、.ioc）都有「浏览…」按钮；弹窗带面包屑地址栏、磁盘侧栏、名称筛选、选中高亮，单击选中、双击进入/打开，Enter 确认、Esc 关闭；工作台工具栏的工程名也能直接点开切换工程。
+
+## 界面
+
+<p>
+  <img src="docs/assets/screenshots/pinout.png" alt="引脚图" width="49%">
+  <img src="docs/assets/screenshots/serial.png" alt="串口监视器" width="49%">
+</p>
+
+左：工具栏（工程 / 调试器 / 擦除方式 / 编译 / 下载 / 调试）+ 页签（控制台、寄存器、内存、断点、调用栈、变量、反汇编、串口、RTT、符号、引脚、设置），这里展示的是引脚图。右：串口监视器，枚举串口、选波特率、收发文本或 HEX。
 
 ## 安装
 

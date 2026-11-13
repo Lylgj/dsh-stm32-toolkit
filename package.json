@@ -26,6 +26,8 @@
     "client.js",
     "cordis.patch.yml",
     "dsh.plugin.json",
+    "docs",
+    "screenshots.json",
     "README.md",
     "LICENSE"
   ],

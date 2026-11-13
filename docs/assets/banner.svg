@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 400" width="1280" height="400">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#081a33"/>
+      <stop offset="0.55" stop-color="#0b2545"/>
+      <stop offset="1" stop-color="#123a6b"/>
+    </linearGradient>
+    <linearGradient id="stroke" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7dd3fc"/>
+      <stop offset="1" stop-color="#34d399"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1280" height="400" fill="url(#bg)"/>
+  <circle cx="1090" cy="40" r="230" fill="#7dd3fc" opacity="0.08"/>
+  <circle cx="80" cy="380" r="170" fill="#34d399" opacity="0.06"/>
+  <rect x="48" y="96" width="4" height="196" rx="2" fill="url(#stroke)"/>
+
+  <g font-family="Segoe UI, Microsoft YaHei, PingFang SC, sans-serif">
+    <text x="84" y="108" fill="#7dd3fc" font-size="15" letter-spacing="3.2" font-weight="600">DEEPSEEK HARNESS PLUGIN</text>
+    <text x="82" y="170" fill="#e8f2ff" font-size="52" font-weight="700" letter-spacing="0.3">dsh-stm32-toolkit</text>
+    <text x="84" y="220" fill="#dbe9ff" font-size="24" font-weight="500">在 DSH 里编译、下载、调试 STM32</text>
+    <text x="84" y="260" fill="#9fb6d4" font-size="18">寄存器位域 · 内存 · 反汇编 · 断点 · RTT · 串口 ／ Keil 与 arm-none-eabi</text>
+
+    <g font-size="15">
+      <rect x="84" y="292" width="126" height="34" rx="17" fill="#12325a"/>
+      <text x="106" y="314" fill="#cfe6ff">寄存器视图</text>
+      <rect x="222" y="292" width="126" height="34" rx="17" fill="#12325a"/>
+      <text x="244" y="314" fill="#cfe6ff">串口 / RTT</text>
+      <rect x="360" y="292" width="140" height="34" rx="17" fill="#12325a"/>
+      <text x="382" y="314" fill="#cfe6ff">引脚与符号</text>
+    </g>
+  </g>
+
+  <!-- workbench mock -->
+  <g>
+    <rect x="700" y="80" width="500" height="250" rx="16" fill="#04101f" opacity="0.6"/>
+    <rect x="690" y="70" width="500" height="250" rx="15" fill="#0b1f38" stroke="#1b4a7a" stroke-width="1.5"/>
+    <path d="M690 86 a15 15 0 0 1 15 -15 h470 a15 15 0 0 1 15 15 v26 h-500 z" fill="#12325a"/>
+    <text x="712" y="98" fill="#cfe6ff" font-size="14" font-family="Segoe UI, Microsoft YaHei, sans-serif">STM32 · 控制台</text>
+    <g font-family="Consolas, Cascadia Mono, monospace" font-size="15">
+      <text x="712" y="140" fill="#7dd3fc">&gt; 编译</text>
+      <text x="712" y="168" fill="#9fb6d4">arm-none-eabi-gcc -mcpu=cortex-m4 …</text>
+      <text x="712" y="196" fill="#34d399">✓ build/app.elf  24.6 KB</text>
+      <text x="712" y="224" fill="#7dd3fc">&gt; 下载</text>
+      <text x="712" y="252" fill="#9fb6d4">OpenOCD · flash write · verify ok</text>
+      <text x="712" y="280" fill="#fbbf24">&gt; 调试 已暂停在 main()</text>
+      <rect x="900" y="266" width="10" height="18" fill="#34d399"/>
+    </g>
+  </g>
+</svg>
