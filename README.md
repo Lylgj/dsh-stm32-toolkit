@@ -67,7 +67,7 @@ dsh plugin --profile desktop add "D:\你的路径\dsh-stm32-toolkit"
 
 | 配置项 | 说明 |
 | --- | --- |
-| `projectDir` | 工程目录，例如 `D:\lgj\mcu_acc_app`；留空则用当前工作目录 |
+| `projectDir` | 工程目录，例如 `D:\work\demo_project`；留空则用当前工作目录 |
 | `device` | 芯片型号，例如 `STM32F407VGTx`（从 .uvprojx 自动读取） |
 | `svdPath` | SVD 文件；留空自动在 Keil Pack / 缓存 / 网络查找 |
 | `backend` | `auto` / `keil` / `gcc` |
@@ -113,7 +113,7 @@ dsh plugin --profile desktop add "D:\你的路径\dsh-stm32-toolkit"
 示例：
 
 ```text
-用 stm32_project 打开 D:\lgj\mcu_acc_app
+用 stm32_project 打开 D:\work\demo_project
 用 stm32_build 编译
 用 stm32_flash 下载
 用 stm32_debug 启动调试并运行到 main
@@ -178,10 +178,10 @@ client.js           Web 工作台与内嵌设置页（React，无构建步骤）
 ## 验证状态（2026-11-11）
 
 - `npm test`：**39 个测试全部通过**（SVD/MI/uvprojx 解析、构建日志、OpenOCD 下载命令、HTTP 路由、工具执行、斜杠命令、串口桥、`.ioc`、map/ELF 符号、引脚扫描（含 `#define` 宏与静态表）、工具链安装参数、Keil→CMake 导出、设置页与路径选择器渲染冒烟）。
-- 真实 Keil 工程 `D:\lgj\mcu_acc_app\MDK-ARM\Project.uvprojx` 解析通过：STM32F407VGTx / STM324xG_EVAL / 152 个源文件 / IROM 0x08000000 1MB / IRAM 0x20000000 128KB。
+- 真实 Keil 工程 `D:\work\demo_project\MDK-ARM\Project.uvprojx` 解析通过：STM32F407VGTx / STM324xG_EVAL / 152 个源文件 / IROM 0x08000000 1MB / IRAM 0x20000000 128KB。
 - 同一工程导出 CMake 通过：150 个可编译源文件、18 个 include、3 个宏；Keil 汇编启动文件被 GNU 启动文件替换，FreeRTOS 的 RVDS 移植层自动换成 GCC 版本。
 - 真实 SVD 下载并解析通过：`STM32F407.svd` 91 个外设，GPIOA 0x40020000，MODER 16 个位域。
-- **真实 GCC 编译通过**：手动安装 xPack arm-none-eabi-gcc 15.2.1 + ninja 1.13.2 后，`createIoc` 生成的 `demo_project` 编译成功（text 588 B）；真实 Keil 工程 `D:\lgj\mcu_acc_app` 自动导出 CMake 后编译成功，产物 `.elf/.hex/.bin`，`text 212620 data 580 bss 117608`，链接错误 0。导出时自动补齐 CMSIS 头目录、替换 RVDS→GCC 移植层、放宽 AC5 风格告警（`-Wno-int-conversion` 等）。
+- **真实 GCC 编译通过**：手动安装 xPack arm-none-eabi-gcc 15.2.1 + ninja 1.13.2 后，`createIoc` 生成的 `demo_project` 编译成功（text 588 B）；真实 Keil 工程 `D:\work\demo_project` 自动导出 CMake 后编译成功，产物 `.elf/.hex/.bin`，`text 212620 data 580 bss 117608`，链接错误 0。导出时自动补齐 CMSIS 头目录、替换 RVDS→GCC 移植层、放宽 AC5 风格告警（`-Wno-int-conversion` 等）。
 - 在独立 smoke profile 中真实启动 DSH Web 实例验证：状态快照含 `rtt/install/cores`；`GET /api/stm32/{env,symbols,pins,ioc,rtt}` 正常；真实 HAL 工程扫描出 22 个引脚；`POST projectCreate` 生成 6 个文件的 CMake 工程；`POST envInstall` 能下载并安装 xPack 工具链。
 - 未接探针时 `debugStart`/`flash` 会明确提示“没有找到调试器 / 找不到固件”，不会假装成功。
 
