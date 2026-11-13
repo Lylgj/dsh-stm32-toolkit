@@ -1,7 +1,6 @@
 {
   "meta": {
     "title": "STM32 Toolkit",
-    "description": "Build, flash and debug STM32 without leaving DSH.",
-    "detail": "README.md"
+    "description": "Build, flash and debug STM32 without leaving DSH."
   }
 }

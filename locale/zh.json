@@ -1,7 +1,6 @@
 {
   "meta": {
     "title": "STM32 工具链",
-    "description": "STM32 编译、下载、调试，不用离开 DSH。",
-    "detail": "README.md"
+    "description": "STM32 编译、下载、调试，不用离开 DSH。"
   }
 }
