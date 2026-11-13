@@ -12,7 +12,7 @@
  * a second, so an agent driving the same service is visible here immediately.
  */
 window.__ModuleLoader__.load({
-  id: 'dsh-stm32-toolkit',
+  id: '@lylgj/dsh-stm32-toolkit',
   factory: (require) => {
     const React = require('react');
     const h = React.createElement;
