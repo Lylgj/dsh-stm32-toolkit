@@ -19,6 +19,7 @@
     ".": "./src/index.js",
     "./client": "./client.js",
     "./engine/*": "./src/engine/*.js",
+    "./locale/*": "./locale/*",
     "./package.json": "./package.json"
   },
   "files": [
@@ -27,6 +28,7 @@
     "cordis.patch.yml",
     "dsh.plugin.json",
     "docs",
+    "locale",
     "screenshots.json",
     "README.md",
     "LICENSE"

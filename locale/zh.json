@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "STM32 工具链",
+    "description": "STM32 编译、下载、调试一条龙：Keil 与 arm-none-eabi，OpenOCD + GDB 断点，内核/外设寄存器、内存与反汇编。",
+    "detail": "README.md"
+  }
+}
