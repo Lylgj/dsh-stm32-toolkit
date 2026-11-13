@@ -33,16 +33,18 @@ STM32 工作台：顶部是工程、调试器、擦除方式和编译 / 下载 /
 左侧栏 →「插件」→「添加插件」，在「包名或地址」里填：
 
 ```
-https://github.com/Lylgj/dsh-stm32-toolkit
+@lylgj/dsh-stm32-toolkit
 ```
 
-点「安装」。这里填的地址不经过 npm 源，本机要能直连 github.com（或在系统代理里配好）。
+点「安装」。
 
 **用命令行装**
 
 ```powershell
-dsh plugin --profile desktop add github:Lylgj/dsh-stm32-toolkit
+dsh plugin --profile desktop add @lylgj/dsh-stm32-toolkit
 ```
+
+npm 源不通时可以换成 `github:Lylgj/dsh-stm32-toolkit`（内容相同，但插件页不会显示版本更新）。
 
 **从源码装（自己改代码时）**
 
@@ -51,7 +53,7 @@ dsh plugin --profile desktop add "D:\你的路径\dsh-stm32-toolkit"
 ```
 
 本地目录必须写绝对路径。这样装进去的是目录副本，改完源码要重新安装一次（或把 `src/`、`client.js`、
-`package.json`、`cordis.patch.yml` 复制到 profile 的 `node_modules\dsh-stm32-toolkit\`）再重启。
+`package.json`、`cordis.patch.yml` 复制到 profile 的 `node_modules\@lylgj\dsh-stm32-toolkit\`）再重启。
 
 装完 **重启 DeepSeek Harness 桌面应用**（desktop profile 由 Electron 独占，运行中无法热加载 host 插件）。重启后：
 

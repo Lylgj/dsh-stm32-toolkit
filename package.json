@@ -1,5 +1,5 @@
 {
-  "name": "dsh-stm32-toolkit",
+  "name": "@lylgj/dsh-stm32-toolkit",
   "version": "0.1.0",
   "description": "STM32 IDE for DeepSeek Harness: build, flash, debug, breakpoints, core/peripheral registers, memory and disassembly. Works with Keil MDK (UV4) and the open-source arm-none-eabi + CMake/Make + OpenOCD + GDB toolchain.",
   "keywords": [
@@ -66,5 +66,8 @@
       "inject": []
     }
   },
-  "license": "MIT"
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  }
 }

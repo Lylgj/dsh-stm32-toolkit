@@ -1,3 +1,8 @@
+# 把 STM32 工具链的宿主半边插入 loader 树。
+#
+# `name` 用 PATH-RELATIVE 是故意的：DSH 会把相对路径锚定到「声明它的这个 patch
+# 文件所在目录」，所以无论安装目录叫什么名字（`dsh-stm32-toolkit`、
+# `@lylgj/dsh-stm32-toolkit`，还是别的），它始终加载本包自己的入口。
 - insert:
     - id: dsh-stm32-toolkit
-      name: dsh-stm32-toolkit
+      name: './src/index.js'
