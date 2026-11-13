@@ -26,8 +26,18 @@
     "client.js",
     "cordis.patch.yml",
     "dsh.plugin.json",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
+  "author": "Lylgj",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Lylgj/dsh-stm32-toolkit.git"
+  },
+  "homepage": "https://github.com/Lylgj/dsh-stm32-toolkit#readme",
+  "bugs": {
+    "url": "https://github.com/Lylgj/dsh-stm32-toolkit/issues"
+  },
   "engines": {
     "node": ">=20"
   },

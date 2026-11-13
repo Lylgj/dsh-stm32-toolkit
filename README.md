@@ -18,22 +18,38 @@ DeepSeek Harness 的 STM32 开发插件。参照 Keil MDK 的工作方式，把�
 
 ## 安装
 
-插件目录：`D:\lgj\stm32_tool\dsh-stm32-toolkit`。
+需要 DeepSeek Harness `>= 0.2.1-rc.2`、Node `>= 20`。
+
+**在界面里装（推荐）**
+
+左侧栏 →「插件」→「添加插件」，在「包名或地址」里填：
+
+```
+https://github.com/Lylgj/dsh-stm32-toolkit
+```
+
+点「安装」。这里填的地址不经过 npm 源，本机要能直连 github.com（或在系统代理里配好）。
+
+**用命令行装**
 
 ```powershell
-# 使用 DSH 自带 CLI（不要用系统 pnpm）
-& 'C:\Users\Administrator\AppData\Local\Programs\DeepSeek Harness\resources\runtime\cli\bin\dsh.cmd' `
-  plugin --profile desktop add 'dsh-stm32-toolkit@file:D:/lgj/stm32_tool/dsh-stm32-toolkit'
+dsh plugin --profile desktop add github:Lylgj/dsh-stm32-toolkit
 ```
+
+**从源码装（自己改代码时）**
+
+```powershell
+dsh plugin --profile desktop add "D:\你的路径\dsh-stm32-toolkit"
+```
+
+本地目录必须写绝对路径。这样装进去的是目录副本，改完源码要重新安装一次（或把 `src/`、`client.js`、
+`package.json`、`cordis.patch.yml` 复制到 profile 的 `node_modules\dsh-stm32-toolkit\`）再重启。
 
 装完 **重启 DeepSeek Harness 桌面应用**（desktop profile 由 Electron 独占，运行中无法热加载 host 插件）。重启后：
 
 - 左侧栏出现 **STM32** 图标 → 打开工作台；
 - 工作台里的「设置」标签页可配置工程与工具链（不再单独占用“设置”窗口）；
 - 对话里可用 `stm32_*` 工具和 `/stm32` 命令。
-
-开发调试时，也可以直接把 `src/`、`client.js`、`package.json`、`dsh.plugin.json`、`cordis.patch.yml` 复制到
-`C:\Users\Administrator\.dsh\profiles\desktop\node_modules\dsh-stm32-toolkit\` 覆盖旧文件后重启。
 
 ## 首次配置
 
@@ -58,7 +74,7 @@ DeepSeek Harness 的 STM32 开发插件。参照 Keil MDK 的工作方式，把�
 | `iocFile` | 指定 CubeMX `.ioc`；留空自动找 |
 | `core` | 多核芯片的调试核（0 / 1） |
 
-配置保存在 `%DSH_HOME%\stm32\config.json`（默认 `C:\Users\Administrator\.dsh\stm32\config.json`），SVD 缓存在同目录 `svd\`，构建日志在 `logs\`。
+配置保存在 `%DSH_HOME%\stm32\config.json`（默认 `%USERPROFILE%\.dsh\stm32\config.json`），SVD 缓存在同目录 `svd\`，构建日志在 `logs\`。
 
 ## Agent 工具
 
