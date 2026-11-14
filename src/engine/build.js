@@ -202,6 +202,42 @@ function compilerOverrides(config) {
   ];
 }
 
+/**
+ * Is the existing CMakeCache.txt still usable?
+ *
+ * CMake bakes absolute paths to the generator (CMAKE_MAKE_PROGRAM) and to
+ * cmake itself (CMAKE_COMMAND) into the cache. After the toolchain moves —
+ * e.g. from %USERPROFILE%\Downloads to D:\Downloads — those paths go stale and
+ * `cmake --build` dies with "no such file or directory" while producing no
+ * compiler errors at all. Detect that here so we can silently reconfigure
+ * instead of showing a bare "构建失败 (0 个错误)".
+ */
+function cacheIsStale(cacheFile, config) {
+  let text;
+  try {
+    text = readFileSync(cacheFile, 'utf8');
+  } catch {
+    return true;
+  }
+  const read = (key) => {
+    const m = new RegExp(`^${key}[^=\\r\\n]*=(.*)$`, 'm').exec(text);
+    return m ? m[1].trim().replace(/^"|"$/g, '') : '';
+  };
+  const checks = [
+    ['CMAKE_MAKE_PROGRAM', config.ninjaPath || config.makePath],
+    ['CMAKE_COMMAND', config.cmakePath],
+  ];
+  for (const [key, expected] of checks) {
+    const cached = read(key);
+    if (!cached) continue;
+    // The generator / cmake recorded in the cache is gone from disk.
+    if (/[\\/]/.test(cached) && !fileExists(cached)) return true;
+    // The user points at a different tool than the one this cache was made with.
+    if (expected && cached !== expected) return true;
+  }
+  return false;
+}
+
 async function buildWithCMake(projectInfo, config, options, logFile, startedAt) {
   const { make, cmake, ninja } = toolchainOf(config);
   if (!cmake) throw new Error('未找到 cmake。请安装 CMake 并加入 PATH。');
@@ -218,6 +254,12 @@ async function buildWithCMake(projectInfo, config, options, logFile, startedAt) 
   const env = buildEnv(config);
   let command = '';
   if (options.clean) {
+    try { rmSync(buildDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    ensureDir(buildDir);
+  }
+  // Drop a cache whose recorded tool paths no longer exist (toolchain was
+  // moved/reinstalled), otherwise `cmake --build` fails with no diagnostics.
+  if (fileExists(cacheFile) && cacheIsStale(cacheFile, config)) {
     try { rmSync(buildDir, { recursive: true, force: true }); } catch { /* ignore */ }
     ensureDir(buildDir);
   }
@@ -248,10 +290,35 @@ async function buildWithCMake(projectInfo, config, options, logFile, startedAt) 
   }
   if (!make && !ninja) throw new Error('未找到 make/ninja，无法执行 CMake 构建。');
   const buildArgs = ['--build', buildDir, '--parallel'];
-  const build = await run(cmake, buildArgs, { timeoutMs: config.buildTimeoutMs ?? 20 * 60 * 1000, env });
+  let build = await run(cmake, buildArgs, { timeoutMs: config.buildTimeoutMs ?? 20 * 60 * 1000, env });
+  let log = `${build.stdout}\n${build.stderr}`;
+  // A stale cache can also blow up mid-build ("build tool execution failed"):
+  // wipe, reconfigure and retry once so the user gets a real diagnostic.
+  if (!build.ok && /no such file or directory|build tool execution failed|CMAKE_MAKE_PROGRAM/i.test(log)) {
+    try { rmSync(buildDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    ensureDir(buildDir);
+    const generator = ninja ? 'Ninja' : (process.platform === 'win32' ? 'MinGW Makefiles' : 'Unix Makefiles');
+    const configureArgs = ['-S', root, '-B', buildDir, '-G', generator];
+    if (ninja) configureArgs.push(`-DCMAKE_MAKE_PROGRAM=${ninja}`);
+    if (config.cmakeToolchainFile) configureArgs.push(`-DCMAKE_TOOLCHAIN_FILE=${config.cmakeToolchainFile}`);
+    if (config.cmakeBuildType) configureArgs.push(`-DCMAKE_BUILD_TYPE=${config.cmakeBuildType}`);
+    configureArgs.push(...compilerOverrides(config));
+    (config.cmakeExtraArgs ?? []).forEach((a) => configureArgs.push(a));
+    const configure = await run(cmake, configureArgs, { timeoutMs: 5 * 60 * 1000, env });
+    if (configure.ok) {
+      build = await run(cmake, buildArgs, { timeoutMs: config.buildTimeoutMs ?? 20 * 60 * 1000, env });
+      log = `(重新配置 CMake：缓存的工具路径已失效)\n${configure.stdout}\n${configure.stderr}\n${build.stdout}\n${build.stderr}`;
+    } else {
+      log = `${configure.stdout}\n${configure.stderr}`;
+    }
+  }
   command = build.command;
-  const log = `${build.stdout}\n${build.stderr}`;
   const { errors, warnings } = parseGccLog(log);
+  if (!errors.length && !build.ok) {
+    // Surface why a build failed even when the compiler printed no `error:`.
+    const tail = log.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(-6).join(' · ');
+    errors.push({ file: '', line: 0, message: tail || `构建工具退出码 ${build.code}`, raw: tail });
+  }
   const artifacts = collectArtifacts({ ...projectInfo, buildDir });
   return {
     ok: build.ok,
