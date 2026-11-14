@@ -74,7 +74,11 @@ window.__ModuleLoader__.load({
       .stm32-chip-btn { cursor:pointer; background:none; color:inherit; opacity:.9;
         max-width:260px; overflow:hidden; text-overflow:ellipsis; }
       .stm32-chip-btn:hover { border-color:#3b82f6; opacity:1; }
-      .stm32-toolbar-actions { display:flex; align-items:center; gap:6px; margin-left:auto; flex-wrap:wrap; }
+      .stm32-toolbar-actions { display:flex; align-items:center; gap:6px; margin-left:auto; flex-wrap:wrap; flex:0 0 auto; }
+      .stm32-toolbar-actions .stm32-btn-fixed { min-width:84px; }
+      .stm32-toolbar-busy { display:inline-flex; align-items:center; justify-content:center;
+        min-width:24px; height:22px; box-sizing:border-box; font-size:11px; opacity:.75; }
+      .stm32-toolbar-busy:empty { visibility:hidden; }
       .stm32-toolbar-field { display:inline-flex; align-items:center; gap:5px; font-size:11.5px;
         opacity:.8; white-space:nowrap; }
       .stm32-toolbar-select { appearance:none; -webkit-appearance:none; cursor:pointer; color:inherit;
@@ -237,18 +241,8 @@ window.__ModuleLoader__.load({
         border-radius:5px; cursor:pointer; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
       .stm32-picker-crumb:hover { background:rgba(128,128,128,.14); }
       .stm32-picker-sep { opacity:.3; }
-      .stm32-picker-body { flex:1; min-height:0; display:grid; grid-template-columns:172px minmax(0,1fr); }
-      .stm32-picker-side { border-right:1px solid rgba(128,128,128,.16); padding:8px 6px; display:flex;
-        flex-direction:column; gap:2px; overflow:auto; background:rgba(128,128,128,.035); }
-      .stm32-picker-side-title { font-size:10.5px; letter-spacing:.06em; text-transform:uppercase;
-        opacity:.45; padding:4px 8px 6px; }
-      .stm32-picker-sideitem { display:flex; align-items:center; gap:7px; border:0; background:transparent;
-        color:inherit; text-align:left; padding:6px 8px; border-radius:6px; cursor:pointer; font:inherit;
-        font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-      .stm32-picker-sideitem:hover { background:rgba(128,128,128,.12); }
-      .stm32-picker-sideitem.active { background:rgba(59,130,246,.14); color:#3b82f6; }
-      .stm32-picker-side-empty { opacity:.5; padding:6px 8px; }
-      .stm32-picker-main { display:flex; flex-direction:column; min-width:0; min-height:0; }
+      .stm32-picker-body { flex:1; min-height:0; display:flex; flex-direction:column; }
+      .stm32-picker-main { display:flex; flex-direction:column; flex:1; min-width:0; min-height:0; }
       .stm32-picker-filterbar { display:flex; align-items:center; gap:10px; padding:7px 10px;
         border-bottom:1px solid rgba(128,128,128,.12); }
       .stm32-picker-filter { flex:1; min-width:0; border:1px solid rgba(128,128,128,.22); border-radius:6px;
@@ -351,7 +345,7 @@ window.__ModuleLoader__.load({
       const running = Boolean(debug.running);
 
       const btn = (label, onClick, opts = {}) => h('button', {
-        className: `stm32-btn${opts.primary ? ' primary' : ''}${opts.danger ? ' danger' : ''}`,
+        className: `stm32-btn${opts.primary ? ' primary' : ''}${opts.danger ? ' danger' : ''}${opts.fixedWidth ? ' stm32-btn-fixed' : ''}`,
         title: opts.title ?? label,
         disabled: opts.disabled ?? false,
         onClick,
@@ -395,16 +389,16 @@ window.__ModuleLoader__.load({
         ]),
         h('span', { key: 'spacer', style: { flex: 1 } }),
         h('div', { className: 'stm32-toolbar-actions', key: 'actions' }, [
-          btn(buildRunning ? '编译中…' : '编译', () => run('build'), { disabled: buildRunning || flashRunning, title: '编译工程 (F7)' }),
-          btn(flashRunning ? '下载中…' : '下载', () => run('flash'), { disabled: flashRunning || buildRunning || !project?.artifact || active, title: '下载到芯片 (F8)' }),
+          btn(buildRunning ? '编译中…' : '编译', () => run('build'), { fixedWidth: true, disabled: buildRunning || flashRunning, title: '编译工程 (F7)' }),
+          btn(flashRunning ? '下载中…' : '下载', () => run('flash'), { fixedWidth: true, disabled: flashRunning || buildRunning || !project?.artifact || active, title: '下载到芯片 (F8)' }),
           active
             ? btn('停止调试', () => run('debugStop'), { danger: true, title: '结束调试会话' })
-            : btn(debugStarting ? '启动中…' : '调试', () => run('debugStart'), { primary: true, disabled: debugStarting, title: '启动调试并运行到 main' }),
+            : btn(debugStarting ? '启动中…' : '调试', () => run('debugStart'), { primary: true, fixedWidth: true, disabled: debugStarting, title: '启动调试并运行到 main' }),
           active ? btn(running ? '暂停' : '继续', () => run('debug', { op: running ? 'pause' : 'continue', waitMs: 0 }), { title: '暂停 / 继续 (F5)' }) : null,
           active ? btn('单步', () => run('debug', { op: 'stepOver' }), { title: '单步跳过 (F10)' }) : null,
           active ? btn('步入', () => run('debug', { op: 'stepInto' }), { title: '单步进入 (F11)' }) : null,
           active ? btn('复位', () => run('debug', { op: 'reset' }), { title: '复位并暂停' }) : null,
-          busy > 0 ? h('span', { key: 'busy', className: 'stm32-chip' }, '…') : null,
+          h('span', { key: 'sp2', className: 'stm32-toolbar-busy', 'aria-hidden': 'true' }, busy > 0 ? '…' : ''),
         ]),
       ]);
     }
@@ -1388,17 +1382,6 @@ window.__ModuleLoader__.load({
           ]),
         ]),
         h('div', { className: 'stm32-picker-body' }, [
-          h('aside', { className: 'stm32-picker-side' }, [
-            h('div', { className: 'stm32-picker-side-title' }, '此电脑'),
-            ...((view.drives ?? []).length
-              ? view.drives.map((drive) => h('button', {
-                key: drive.path,
-                type: 'button',
-                className: `stm32-picker-sideitem${cwd === drive.path ? ' active' : ''}`,
-                onClick: () => browse(drive.path),
-              }, [h('span', { className: 'stm32-picker-ico' }, '💽'), drive.name]))
-              : [h('div', { key: 'nodrives', className: 'stm32-picker-side-empty' }, '无磁盘信息')]),
-          ]),
           h('div', { className: 'stm32-picker-main' }, [
             h('div', { className: 'stm32-picker-filterbar' }, [
               h('input', {
