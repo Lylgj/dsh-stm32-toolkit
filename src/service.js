@@ -91,6 +91,7 @@ export class Stm32Service extends EventEmitter {
     this.toolchainAt = 0;
     this.project = null;
     this.projectAt = 0;
+    this.projectRetryAt = 0;
     this.svdCache = null;
     this.debug = new DebugSession(this.debugConfig(), { log: (text) => this.log(text) });
     this.lastBuild = null;
@@ -212,6 +213,31 @@ export class Stm32Service extends EventEmitter {
     return info;
   }
 
+  /**
+   * Re-scan the current project's build output for a fresh firmware artifact.
+   * Keeps `this.project` alive (so the toolbar never flips to "未设置") while
+   * still picking up a newly built .elf/.hex/.bin.
+   */
+  refreshArtifacts() {
+    const project = this.project;
+    if (!project) return;
+    try {
+      const dir = project.buildDir || project.uvprojx?.output?.dirAbs || project.root;
+      if (!dir) return;
+      const artifacts = findArtifact(dir);
+      if (artifacts.length) {
+        project.artifacts = artifacts;
+        const preferred = artifacts.find((item) => ['elf', 'axf', 'hex', 'bin'].includes(item.ext));
+        if (preferred) {
+          project.artifact = preferred.path;
+          project.artifactKind = preferred.ext;
+        }
+      }
+    } catch {
+      /* keep the previous artifact list */
+    }
+  }
+
   svd() {
     const path = this.project?.svd?.path || this.config.svdPath;
     if (!path || !fileExists(path)) return null;
@@ -269,7 +295,11 @@ export class Stm32Service extends EventEmitter {
         : `构建失败 (${result.errors?.length ?? 0} 个错误)`,
       result.ok ? 'info' : 'error',
     );
-    this.project = null; // artifact list changed
+    // The artifact list may have changed. Refresh it in place instead of
+    // dropping the project: the panel polls snapshot() once a second, and a
+    // null project made the toolbar flip to "工程: 未设置" (and disabled the
+    // download button) for a beat after every build.
+    this.refreshArtifacts();
     this.emit('build-end', this.lastBuild);
     return this.lastBuild;
   }
@@ -705,6 +735,14 @@ export class Stm32Service extends EventEmitter {
     // changed a path in settings should see the result on the next poll.
     if (!this.toolchain || Date.now() - this.toolchainAt > 30_000) {
       await this.getToolchain().catch(() => {});
+    }
+    // Self-heal: if the project cache was dropped (e.g. a build failed before
+    // refreshArtifacts existed, or a config change cleared it), re-inspect the
+    // configured directory instead of leaving the toolbar stuck on "未设置".
+    // Throttled so a genuinely empty directory does not re-scan every second.
+    if (!this.project && this.config.projectDir && Date.now() - (this.projectRetryAt ?? 0) > 5000) {
+      this.projectRetryAt = Date.now();
+      await this.inspect(this.config.projectDir).catch(() => {});
     }
     const project = this.project;
     return {
