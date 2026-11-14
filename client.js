@@ -1498,6 +1498,8 @@ window.__ModuleLoader__.load({
             { label: 'arm-none-eabi-gcc', value: [tc.gcc?.gcc, tc.gcc?.version].filter(Boolean).join(' ') || '未找到', ok: Boolean(tc.gcc?.gcc) },
             { label: 'arm-none-eabi-gdb', value: tc.gcc?.gdb || '未找到', ok: Boolean(tc.gcc?.gdb) },
             { label: 'OpenOCD', value: tc.openocd?.path || '未找到', ok: Boolean(tc.openocd?.path) },
+            { label: 'J-Link (JLink.exe)', value: [tc.programmers?.jlink].filter(Boolean).join(' ') || '未找到', ok: Boolean(tc.programmers?.jlink) },
+            { label: 'J-Link GDB Server', value: tc.programmers?.jlinkGdbServer || '未找到', ok: Boolean(tc.programmers?.jlinkGdbServer) },
             { label: '调试器', value: probes.length ? probes.join(', ') : '未检测到已连接的调试器', ok: probes.length > 0 },
             { label: '构建后端', value: tc.backend || '自动（未确定）', ok: Boolean(tc.backend) },
           ]);
@@ -1606,13 +1608,18 @@ window.__ModuleLoader__.load({
         ], 'project'),
         section('工具链', [
           field('uv4Path', 'Keil UV4', 'C:\\Keil_v5\\UV4\\UV4.exe', '使用 Keil/AC5 工程构建时需要；纯开源工具链可留空。', { mode: 'file', exts: ['.exe'], title: '选择 UV4.exe' }),
-          field('openocdPath', 'OpenOCD', 'C:\\...\\bin\\openocd.exe', '下载与调试都通过它连接 ST-Link / CMSIS-DAP / J-Link。', { mode: 'file', exts: ['.exe'], title: '选择 openocd.exe' }),
+          field('openocdPath', 'OpenOCD', 'C:\\...\\bin\\openocd.exe', 'OpenOCD 后端用它连接 ST-Link / CMSIS-DAP。J-Link 探针走下面的原生后端，不经过 OpenOCD。', { mode: 'file', exts: ['.exe'], title: '选择 openocd.exe' }),
           field('openocdScripts', 'OpenOCD scripts', '可选，对应 -s 参数目录', 'interface/ 与 target/ 配置文件所在目录；留空从 OpenOCD 安装位置推断。', { mode: 'dir', title: '选择 OpenOCD scripts 目录' }),
           field('gdbPath', 'arm-none-eabi-gdb', '自动从 PATH 查找', '调试会话使用 GDB/MI 协议；留空自动探测。', { mode: 'file', exts: ['.exe'], title: '选择 arm-none-eabi-gdb.exe' }),
           field('gccPath', 'arm-none-eabi-gcc', '自动从 PATH 查找', '开源工具链构建时使用；Keil 构建不需要。', { mode: 'file', exts: ['.exe'], title: '选择 arm-none-eabi-gcc.exe' }),
           field('ninjaPath', 'Ninja / Make', '自动从 PATH 查找', 'CMake 生成构建文件后调用的构建工具；填 ninja.exe，留空会自动探测。', { mode: 'file', exts: ['.exe'], title: '选择 ninja.exe' }),
         ], 'toolchain'),
         section('调试器', [
+          selectRow('backend', '调试后端', [
+            { value: 'auto', label: '自动（按探针/硬件推断）' },
+            { value: 'jlink', label: 'SEGGER J-Link（原生）' },
+            { value: 'openocd', label: 'OpenOCD' },
+          ], 'J-Link 探针（USB 被 SEGGER 私有驱动独占）只能用 J-Link 原生后端；开源探针用 OpenOCD。选“自动”时按下面的“类型”与已连接硬件决定。'),
           h('div', { className: 'stm32-set-row', key: 'probe' }, [
             h('div', { className: 'stm32-set-label' }, '类型'),
             h('div', { className: 'stm32-set-control' }, [
@@ -1621,13 +1628,20 @@ window.__ModuleLoader__.load({
                 h('option', { value: 'cmsis-dap', key: 'c' }, 'CMSIS-DAP / DAPLink'),
                 h('option', { value: 'jlink', key: 'j' }, 'J-Link'),
               ]),
-              h('div', { className: 'stm32-set-hint' }, '选择已连接的调试器类型，OpenOCD 会加载对应的 interface 配置。'),
+              h('div', { className: 'stm32-set-hint' }, '选择已连接的调试器类型。OpenOCD 会据此加载 interface 配置；J-Link 后端据此切换。'),
             ]),
           ]),
-          field('interfaceCfg', 'interface 配置', '留空自动选择，如 interface/stlink.cfg', '一般留空即可；需要特殊接法时手动填写。'),
-          field('targetCfg', 'target 配置', '留空自动选择，如 target/stm32f4x.cfg', '默认由芯片型号推断，例如 STM32F407 对应 target/stm32f4x.cfg。'),
-          field('adapterSpeed', 'SWD 速度 (kHz)', '4000', '连接不稳定时可调低，例如 1000。'),
-          field('gdbPort', 'GDB 端口', '3333', 'OpenOCD 与 GDB 之间的本地端口，被占用时换一个。'),
+          field('jlinkPath', 'JLink.exe', 'C:\\Program Files\\SEGGER\\JLink_V994\\JLink.exe', 'J-Link 下载(烧录)用；留空自动在 SEGGER 安装目录查找最新版本。', { mode: 'file', exts: ['.exe'], title: '选择 JLink.exe' }),
+          field('jlinkGDBServerPath', 'JLinkGDBServerCL.exe', '…\\JLinkGDBServerCL.exe', 'J-Link 调试用；留空自动查找。', { mode: 'file', exts: ['.exe'], title: '选择 JLinkGDBServerCL.exe' }),
+          field('jlinkDevice', 'J-Link 器件名', '留空用工程芯片，如 STM32F407VG', 'SEGGER 的目标器件名，通常去掉封装后缀：STM32F407VGTx → STM32F407VG。留空自动由工程 device 推导，多型号工程可在此覆盖。'),
+          selectRow('jlinkInterface', 'J-Link 接口', [
+            { value: 'SWD', label: 'SWD' },
+            { value: 'JTAG', label: 'JTAG' },
+          ], '常见接法为 SWD。'),
+          field('interfaceCfg', 'interface 配置', '留空自动选择，如 interface/stlink.cfg', '仅 OpenOCD 后端使用；一般留空即可。'),
+          field('targetCfg', 'target 配置', '留空自动选择，如 target/stm32f4x.cfg', '仅 OpenOCD 后端使用；默认由芯片型号推断。'),
+          field('adapterSpeed', 'SWD/JTAG 速度 (kHz)', '4000', 'OpenOCD 与 J-Link 通用；连接不稳定时可调低，例如 1000。'),
+          field('gdbPort', 'GDB 端口', '3333', '本地 GDB 连接端口（OpenOCD 与 J-Link 通用，默认 3333；J-Link 也可用 2331），被占用时换一个。'),
           h('div', { className: 'stm32-set-row', key: 'runToMain' }, [
             h('div', { className: 'stm32-set-label' }, '启动行为'),
             h('div', { className: 'stm32-set-control' }, [

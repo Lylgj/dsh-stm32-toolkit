@@ -10,6 +10,7 @@ import { EventEmitter } from 'node:events';
 import { bufferFromHex, hex, parseAddress } from '../util.js';
 import { GdbSession } from './gdb.js';
 import { interfaceConfigFor, startGdbServer } from './openocd.js';
+import { startJLinkGdbServer } from './jlink.js';
 import { readCoreRegisters, readPeripheral, readSingleRegister, resolveRegisterAddress } from './registers.js';
 
 export class DebugSession extends EventEmitter {
@@ -18,6 +19,7 @@ export class DebugSession extends EventEmitter {
     this.config = config;
     this.log = dependencies.log ?? (() => {});
     this.server = null;
+    this.backend = 'openocd';
     this.gdb = null;
     this.elf = '';
     this.starting = false;
@@ -33,6 +35,7 @@ export class DebugSession extends EventEmitter {
   state() {
     return {
       active: this.active,
+      backend: this.backend ?? null,
       starting: this.starting,
       running: this.running,
       halted: this.active && !this.running,
@@ -54,28 +57,43 @@ export class DebugSession extends EventEmitter {
     try {
       if (!options.elf) throw new Error('缺少 ELF 文件路径，无法开始调试');
       this.elf = options.elf;
-      const interfaceCfg = options.interfaceCfg
-        || this.config.interfaceCfg
-        || interfaceConfigFor(this.config.probe);
-      const targetCfg = options.targetCfg || this.config.targetCfg;
-      if (!targetCfg) throw new Error('缺少 OpenOCD target 配置（例如 target/stm32f4x.cfg）');
-      if (!this.config.openocdPath) throw new Error('未找到 openocd');
       if (!this.config.gdbPath) throw new Error('未找到 arm-none-eabi-gdb');
+      const backend = this.config.backend === 'jlink' ? 'jlink' : 'openocd';
+      this.backend = backend;
 
-      this.log(`启动 OpenOCD: ${interfaceCfg} + ${targetCfg}`);
-      this.server = await startGdbServer({
-        openocdPath: this.config.openocdPath,
-        interfaceCfg,
-        targetCfg,
-        scriptsPath: this.config.openocdScripts,
-        gdbPort: this.config.gdbPort ?? 3333,
-        telnetPort: this.config.telnetPort ?? 4444,
-        adapterSpeed: options.adapterSpeed ?? this.config.adapterSpeed ?? 4000,
-        extraCommands: this.config.openocdCommands ?? [],
-      });
+      if (backend === 'jlink') {
+        if (!this.config.jlinkGDBServerPath) throw new Error('未找到 JLinkGDBServerCL，请安装 SEGGER J-Link 软件或配置 jlinkGDBServerPath');
+        if (!this.config.jlinkDevice) throw new Error('缺少 J-Link 目标器件名（jlinkDevice 或工程 device）');
+        this.log(`启动 J-Link GDB Server: ${this.config.jlinkDevice} (${this.config.jlinkInterface || 'SWD'} ${options.adapterSpeed ?? this.config.adapterSpeed ?? 4000}kHz)`);
+        this.server = await startJLinkGdbServer({
+          gdbserverPath: this.config.jlinkGDBServerPath,
+          device: this.config.jlinkDevice,
+          interfaceName: this.config.jlinkInterface || 'SWD',
+          speed: options.adapterSpeed ?? this.config.adapterSpeed ?? 4000,
+          gdbPort: this.config.gdbPort ?? 2331,
+        });
+      } else {
+        const interfaceCfg = options.interfaceCfg
+          || this.config.interfaceCfg
+          || interfaceConfigFor(this.config.probe);
+        const targetCfg = options.targetCfg || this.config.targetCfg;
+        if (!targetCfg) throw new Error('缺少 OpenOCD target 配置（例如 target/stm32f4x.cfg）');
+        if (!this.config.openocdPath) throw new Error('未找到 openocd');
+        this.log(`启动 OpenOCD: ${interfaceCfg} + ${targetCfg}`);
+        this.server = await startGdbServer({
+          openocdPath: this.config.openocdPath,
+          interfaceCfg,
+          targetCfg,
+          scriptsPath: this.config.openocdScripts,
+          gdbPort: this.config.gdbPort ?? 3333,
+          telnetPort: this.config.telnetPort ?? 4444,
+          adapterSpeed: options.adapterSpeed ?? this.config.adapterSpeed ?? 4000,
+          extraCommands: this.config.openocdCommands ?? [],
+        });
+      }
       this.server.exitedPromise.then((code) => {
         if (this.server && this.active) {
-          this.log(`OpenOCD 已退出 (${code})`);
+          this.log(`${this.backend === 'jlink' ? 'J-Link GDB Server' : 'OpenOCD'} 已退出 (${code})`);
           this.running = false;
         }
       });
@@ -106,7 +124,7 @@ export class DebugSession extends EventEmitter {
       await gdb.load(this.elf);
       await gdb.connect('localhost', this.server.gdbPort);
       this.log('已连接目标，复位并暂停…');
-      await gdb.resetAndHalt();
+      await gdb.resetAndHalt(backend);
       this.running = false;
 
       // Read the reset PC so the panel has something to show immediately.
@@ -129,12 +147,26 @@ export class DebugSession extends EventEmitter {
   /** Temporary breakpoint on `main`, continue, wait for the halt. */
   async runToMain() {
     const gdb = this.requireGdb();
+    // SEGGER's GDB Server rejects `reset halt`, and a target left running from a
+    // previous stage makes `-exec-continue` fail with "thread is running". So on
+    // the jlink backend re-establish a known halted state at the reset vector
+    // before arming the breakpoint.
+    if (this.backend === 'jlink') {
+      await gdb.resetAndHalt('jlink').catch(() => null);
+      this.running = false;
+    }
     const main = await gdb.evalExpression('(void*)main').catch(() => null);
     if (!main) return;
     await gdb.setBreakpoint('main', { pending: false }).catch(() => null);
     this.running = true;
     await gdb.continue().catch(() => null);
-    await this.waitForStop(15_000).catch(() => null);
+    const stop = await this.waitForStop(15_000).catch(() => null);
+    if (!stop && this.running) {
+      // Never leave the target free-running: a later step/pause would then race.
+      await gdb.interrupt().catch(() => null);
+      await this.waitForStop(5_000).catch(() => null);
+      this.log('运行到 main 超时，已暂停目标');
+    }
   }
 
   async waitForStop(timeoutMs) {
@@ -199,19 +231,32 @@ export class DebugSession extends EventEmitter {
 
   async step(kind = 'over') {
     const gdb = this.requireGdb();
-    this.running = false;
+    // A free-running target cannot be stepped; halt it first.
+    if (this.running) {
+      await gdb.interrupt().catch(() => null);
+      await this.waitForStop(3000).catch(() => null);
+    }
     if (kind === 'into') await gdb.stepInto();
     else if (kind === 'out') await gdb.stepOut();
     else if (kind === 'instruction') await gdb.stepInstruction();
     else await gdb.stepOver();
     const stop = await this.waitForStop(5000).catch(() => null);
-    if (!stop) await this.refreshStop().catch(() => null);
+    if (!stop) {
+      if (this.running) await gdb.interrupt().catch(() => null);
+      await this.waitForStop(3000).catch(() => null);
+      await this.refreshStop().catch(() => null);
+    }
     return { ok: true, stop: stop ?? this.lastStop, state: this.state() };
   }
 
   async reset(halt = true) {
     const gdb = this.requireGdb();
-    await gdb.monitor(halt ? 'reset halt' : 'reset run');
+    if (this.backend === 'jlink') {
+      await gdb.monitor('reset');
+      if (halt) await gdb.monitor('halt');
+    } else {
+      await gdb.monitor(halt ? 'reset halt' : 'reset run');
+    }
     this.running = !halt;
     if (halt) {
       await this.waitForStop(3000).catch(() => null);

@@ -8,6 +8,7 @@ DeepSeek Harness 的 STM32 开发插件。参照 Keil MDK 的工作方式，把�
 - **19 个 Agent 工具**（`stm32_*`），可以让模型直接编译、下载、下断点、读寄存器、开关串口、看 RTT、查符号/引脚、装工具链、建工程。
 - **`/stm32` 斜杠命令**，手工快速操作。
 - **双后端**：装了 Keil 就用 `UV4.exe`（AC5/AC6 均可）；没有 Keil 就用 `arm-none-eabi-gcc/gdb + CMake/Make + OpenOCD`。没装 Keil 时打开 Keil 工程直接点“编译”即可：插件会把 `.uvprojx` 自动导出成 CMake（GNU 启动文件 + 生成的 `linker.ld`，FreeRTOS 的 RVDS 移植层自动换成 GCC 版本），再用 arm-none-eabi 编译。
+- **两种调试/下载后端**：开源探针（ST-Link / CMSIS-DAP）走 OpenOCD；**SEGGER J-Link 走原生后端**（`JLinkGDBServerCL` 调试 + `JLink.exe` 烧录）。当 J-Link 的 USB 被 SEGGER 私有驱动独占、OpenOCD 报 `LIBUSB_ERROR_NOT_FOUND` 时，J-Link 原生后端是唯一可用的方式，设置里把 `backend` 设为 `jlink`（或 `auto` 且探针为 J-Link）即可。
 - **一键装工具链**：设置页「下载并安装工具链」，从 xPack 官方 GitHub Release 拉 arm-none-eabi-gcc/gdb 与 OpenOCD，解压到 `%DSH_HOME%\stm32\tools\` 并自动写回配置。
 - **寄存器查看**：解析 CMSIS-SVD（Keil Pack 里找，找不到自动从 cmsis-svd-data 下载并缓存），按位域解码，支持内核寄存器（R0–R15、xPSR、MSP/PSP、CONTROL、PRIMASK…）。
 - **下载选项**：按扇区擦除 / 整片擦除、下载后校验、下载后复位。
@@ -72,11 +73,13 @@ dsh plugin --profile desktop add "D:\你的路径\dsh-stm32-toolkit"
 | `projectDir` | 工程目录，例如 `D:\work\demo_project`；留空则用当前工作目录 |
 | `device` | 芯片型号，例如 `STM32F407VGTx`（从 .uvprojx 自动读取） |
 | `svdPath` | SVD 文件；留空自动在 Keil Pack / 缓存 / 网络查找 |
-| `backend` | `auto` / `keil` / `gcc` |
+| `backend` | 下载/调试后端：`auto` / `jlink` / `openocd`（`auto` 时按探针与已装工具决定）；构建后端仍自动选择 Keil 或 GCC |
 | `uv4Path` / `openocdPath` / `gdbPath` / `gccPath` | 手动指定可执行文件（一般留空自动探测） |
 | `ninjaPath` / `cmakePath` | 手动指定 Ninja / CMake（一般留空自动探测） |
 | `probe` | `stlink` / `cmsis-dap` / `jlink` |
-| `interfaceCfg` / `targetCfg` | OpenOCD 配置；留空按芯片和调试器自动推荐 |
+| `jlinkPath` / `jlinkGDBServerPath` | `JLink.exe` / `JLinkGDBServerCL.exe`；留空自动在 `%ProgramFiles%\SEGGER\JLink_V*` 找最新版本 |
+| `jlinkDevice` / `jlinkInterface` | J-Link 目标器件名（留空由工程芯片推导，如 `STM32F407VGTx → STM32F407VG`，可覆盖以支持多型号）/ 接口 `SWD` / `JTAG` |
+| `interfaceCfg` / `targetCfg` | OpenOCD 配置；留空按芯片和调试器自动推荐（J-Link 原生后端不使用） |
 | `adapterSpeed` / `gdbPort` | SWD 速度（kHz）/ GDB Server 端口 |
 | `flashErase` / `flashVerify` / `flashReset` | 下载时整片擦除 / 校验 / 复位 |
 | `serialPort` / `serialBaud` | 串口监视器默认端口 / 波特率 |
@@ -92,12 +95,12 @@ dsh plugin --profile desktop add "D:\你的路径\dsh-stm32-toolkit"
 
 | 工具 | 作用 |
 | --- | --- |
-| `stm32_project` | 识别/切换工程，返回芯片、目标、产物、SVD、推荐 OpenOCD 配置 |
-| `stm32_doctor` | 检查 Keil / GCC / OpenOCD / CubeProgrammer / 已连接调试器 |
+| `stm32_project` | 识别/切换工程，返回芯片、目标、产物、调试产物、SVD、推荐 OpenOCD 配置 |
+| `stm32_doctor` | 检查 Keil / GCC / OpenOCD / SEGGER J-Link / CubeProgrammer / 已连接调试器 |
 | `stm32_config` | 读写配置 |
 | `stm32_build` | 编译（Keil `UV4 -b`；没装 Keil 时自动把 .uvprojx 导出为 CMake 用 GCC 编译；CMake/Makefile 直接构建），返回错误、警告、固件路径 |
 | `stm32_export` | 把 Keil `.uvprojx` 导出为 CMake/GCC 工程（源文件、include、宏、GNU 启动文件、linker.ld） |
-| `stm32_flash` | 下载（OpenOCD `program verify reset`；无 OpenOCD 时 Keil `UV4 -f`）；可整片擦除、关闭校验/复位 |
+| `stm32_flash` | 下载（SEGGER J-Link `JLink.exe` 脚本烧录 / OpenOCD `program verify reset` / Keil `UV4 -f`）；可整片擦除、关闭校验/复位 |
 | `stm32_debug` | 调试会话 start/stop/continue/pause/step*/reset/status |
 | `stm32_breakpoint` | 断点/监视点 add/remove/list（函数、`file:line`、地址；条件断点、硬件断点、读/写监视点） |
 | `stm32_registers` | `core` / `peripheral GPIOA` / `list` / `register GPIOA.MODER` |
@@ -161,8 +164,9 @@ src/engine/uvprojx.js   Keil .uvprojx 解析（芯片、宏、include、产物�
 src/engine/project.js   工程发现、产物查找、SVD 定位/缓存/下载
 src/engine/build.js     Keil UV4 / CMake / Make 构建与日志解析
 src/engine/gdb.js       GDB/MI2 会话（断点、内存、栈、反汇编、变量）
-src/engine/debug.js     OpenOCD + GDB 调试会话生命周期
+src/engine/debug.js     调试会话生命周期（OpenOCD 或 J-Link GDB Server + GDB）
 src/engine/openocd.js   OpenOCD GDB Server 启动、固件下载、就绪探测
+src/engine/jlink.js     SEGGER J-Link 原生后端（JLinkGDBServer 调试、JLink.exe 烧录）
 src/engine/svd.js       CMSIS-SVD 解析（derivedFrom、dim、cluster、位域枚举）
 src/engine/registers.js 内核寄存器 / 外设批量读取与解码
 src/engine/mi.js        GDB/MI 解析器
@@ -177,11 +181,15 @@ client.js           Web 工作台与内嵌设置页（React，无构建步骤）
 
 插件 host 侧只依赖 Node 内置模块；client 侧只 `require('react')`。
 
-## 验证状态（2026-11-11）
+## 验证状态（2026-11-14）
 
-- `npm test`：**39 个测试全部通过**（SVD/MI/uvprojx 解析、构建日志、OpenOCD 下载命令、HTTP 路由、工具执行、斜杠命令、串口桥、`.ioc`、map/ELF 符号、引脚扫描（含 `#define` 宏与静态表）、工具链安装参数、Keil→CMake 导出、设置页与路径选择器渲染冒烟）。
-- 真实 Keil 工程 `D:\work\demo_project\MDK-ARM\Project.uvprojx` 解析通过：STM32F407VGTx / STM324xG_EVAL / 152 个源文件 / IROM 0x08000000 1MB / IRAM 0x20000000 128KB。
-- 同一工程导出 CMake 通过：150 个可编译源文件、18 个 include、3 个宏；Keil 汇编启动文件被 GNU 启动文件替换，FreeRTOS 的 RVDS 移植层自动换成 GCC 版本。
+- `npm test`：**33 通过 / 0 失败 / 8 跳过**（跳过 8 个需要本机真实工程或 SVD 的用例，例如 `D:\lgj\mcu_acc_app`）。
+- **J-Link 原生后端真机验证通过**（SEGGER J-Link CE，固件 V9，S/N 69531124，STM32F407VGTx）：
+  - 烧录：`JLink.exe -CommanderScript` 写入 `STM324xG_EVAL.elf`，`Programming flash ... Done` / `Verifying flash ... Done`，末行 `O.K.`；
+  - 调试：`JLinkGDBServerCL` + `arm-none-eabi-gdb`，`target extended-remote` → `monitor reset` + `monitor halt` → `break main` → `continue` 命中 `Src/main.c:861`，单步/调用栈/变量求值/断点/停止全部正常；
+  - 注意 SEGGER GDB Server 不接受 `monitor reset halt`，须拆成 `monitor reset` + `monitor halt` 两步（插件已按后端自动区分）。
+- 真实 Keil 工程 `D:\lgj\work\LA_NEW\mcu_acc_app\MDK-ARM\Project.uvprojx` 解析通过：STM32F407VGTx / STM324xG_EVAL / IROM 0x08000000 1MB / IRAM 0x20000000 128KB。
+- 同一工程导出 CMake 通过并被 J-Link 后端直接烧录/调试。
 - 真实 SVD 下载并解析通过：`STM32F407.svd` 91 个外设，GPIOA 0x40020000，MODER 16 个位域。
 - **真实 GCC 编译通过**：手动安装 xPack arm-none-eabi-gcc 15.2.1 + ninja 1.13.2 后，`createIoc` 生成的 `demo_project` 编译成功（text 588 B）；真实 Keil 工程 `D:\work\demo_project` 自动导出 CMake 后编译成功，产物 `.elf/.hex/.bin`，`text 212620 data 580 bss 117608`，链接错误 0。导出时自动补齐 CMSIS 头目录、替换 RVDS→GCC 移植层、放宽 AC5 风格告警（`-Wno-int-conversion` 等）。
 - 在独立 smoke profile 中真实启动 DSH Web 实例验证：状态快照含 `rtt/install/cores`；`GET /api/stm32/{env,symbols,pins,ioc,rtt}` 正常；真实 HAL 工程扫描出 22 个引脚；`POST projectCreate` 生成 6 个文件的 CMake 工程；`POST envInstall` 能下载并安装 xPack 工具链。
@@ -189,9 +197,9 @@ client.js           Web 工作台与内嵌设置页（React，无构建步骤）
 
 **未验证**（本机没有相应环境，插件会在界面上如实报错，不会假装成功）：
 
-- Keil UV4 实际编译：本机未安装 Keil（已用 GCC 后端完成真实编译，见上）；
-- OpenOCD 实际下载、GDB 调试：没有连接 ST-Link/CMSIS-DAP；
-- 实际硬件断点 / 寄存器读值、RTT 真实输出。
+- Keil UV4 实际编译 / 下载：本机未安装 Keil（已用 GCC 后端 + J-Link 完成真实编译/下载/调试，见上）；
+- OpenOCD 实际下载、GDB 调试：本机 J-Link 探针 USB 被 SEGGER 私有驱动独占，OpenOCD 报 `LIBUSB_ERROR_NOT_FOUND`，故改用 J-Link 原生后端验证；
+- RTT 真实输出。
 
 装好工具链并接上探针后，用 `stm32_doctor` 确认环境，再依次 `stm32_build → stm32_flash → stm32_debug` 即可。
 
@@ -217,7 +225,7 @@ client.js           Web 工作台与内嵌设置页（React，无构建步骤）
 ## 已知限制
 
 - AC5 专用工程（例如依赖 ARMCC 内建/分散加载）不能直接用 GCC 构建；这类工程请保留 Keil 后端。
-- 调试需要 `arm-none-eabi-gdb`（或 `gdb-multiarch`）与 OpenOCD；插件会自动找 PATH、`%ProgramFiles%`、`%LOCALAPPDATA%\Programs`，也可以在工作台设置里一键安装。
+- 调试需要 `arm-none-eabi-gdb`（或 `gdb-multiarch`）与 OpenOCD（或 SEGGER J-Link 软件，走 J-Link 原生后端）；插件会自动找 PATH、`%ProgramFiles%`、`%LOCALAPPDATA%\Programs`，也可以在工作台设置里一键安装 gcc/OpenOCD，J-Link 请自行安装 SEGGER 官方软件。
 - RTT 需要目标固件里链接了 SEGGER RTT 组件（`_SEGGER_RTT` 符号）；纯裸机工程需要先加 RTT 源码。
 - 引脚图是静态扫描结果，宏拼接/间接调用可能识别不到；以 CubeMX `.ioc` 和实际编译结果为准。
 - 面板轮询 1s 刷新状态；构建/下载是后台任务，结束后刷新。
@@ -233,6 +241,7 @@ client.js           Web 工作台与内嵌设置页（React，无构建步骤）
 | newlib（C 库） | BSD 类宽松许可 | 免费 | 链接进固件无附加义务 |
 | arm-none-eabi-gdb | GPLv3 | 免费 | 调试器 |
 | OpenOCD | GPLv2 | 免费 | 下载 / 调试 / RTT 服务 |
+| SEGGER J-Link 软件（`JLink.exe` / `JLinkGDBServerCL` / `JLinkARM.dll`） | 商业闭源（免费配探针使用） | 配 SEGGER 探针免费 | 插件**不打包、不分发**其二进制，只在运行时以子进程方式调用你本机安装的 SEGGER 软件；仅使用其公开命令行与开放的 GDB Remote 协议，不涉及源码 |
 | CMake | BSD-3-Clause | 免费 | 插件只检测调用，不随附 |
 | xPack 打包 | MIT（仅打包脚本/元数据） | 免费 | 包内二进制沿用上游 GPL 许可 |
 | SVD 描述文件（`cmsis-svd-data`） | 各芯片厂商原文许可（多为 BSD-3 / Apache-2.0） | 免费 | 只读解析，用于寄存器解码 |

@@ -8,7 +8,7 @@
 
 import { readdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
-import { ensureDir, fileExists } from '../util.js';
+import { ensureDir, dirExists, fileExists } from '../util.js';
 import { findSvdInPacks, findUv4 } from './toolchain.js';
 import { readUvprojx } from './uvprojx.js';
 
@@ -213,6 +213,7 @@ export async function inspectProject(dir, config = {}) {
     pack: '',
     artifact: '',
     artifactKind: '',
+    debugArtifact: '',
     artifacts: [],
     buildDir: '',
     svd: null,
@@ -230,26 +231,49 @@ export async function inspectProject(dir, config = {}) {
       result.device = config.device || info.device;
       result.pack = info.pack;
       result.buildDir = info.output.dirAbs;
-      const candidates = [
+      const candidatePaths = [
         info.output.elf,
         info.output.hex,
         join(info.output.dirAbs, `${info.output.name}.bin`),
       ];
-      for (const candidate of candidates) {
-        if (fileExists(candidate)) {
-          result.artifact = candidate;
-          result.artifactKind = candidate.split('.').pop().toLowerCase();
-          break;
+      // The plugin's own CMake/GCC export lives in `<project.dir>/.dsh-gcc/build`.
+      // When it has been built it is usually the freshest firmware, so include it
+      // instead of always serving a stale Keil-built .axf/.hex from Objects/.
+      const gccBuildDir = join(project.dir, '.dsh-gcc', 'build');
+      if (dirExists(gccBuildDir)) {
+        for (const found of findArtifact(gccBuildDir)) {
+          if (['elf', 'axf', 'hex', 'bin'].includes(found.ext)) candidatePaths.push(found.path);
         }
       }
-      if (!result.artifact) {
-        const found = findArtifact(info.output.dirAbs);
-        if (found.length > 0) {
-          result.artifact = found[0].path;
-          result.artifactKind = found[0].ext;
+      const present = [];
+      const seen = new Set();
+      for (const candidate of candidatePaths) {
+        if (seen.has(candidate) || !fileExists(candidate)) continue;
+        seen.add(candidate);
+        try {
+          present.push({ path: candidate, ext: candidate.split('.').pop().toLowerCase(), mtime: statSync(candidate).mtimeMs });
+        } catch {
+          /* ignore */
         }
       }
-      result.artifacts = findArtifact(info.output.dirAbs);
+      for (const found of findArtifact(info.output.dirAbs)) {
+        if (seen.has(found.path)) continue;
+        seen.add(found.path);
+        present.push(found);
+      }
+      // For a download prefer the freshest image, breaking mtime ties toward the
+      // more compact/authoritative format (.bin > .hex > .elf).
+      const flashWeight = { bin: 3, hex: 2, elf: 1, axf: 1 };
+      present.sort((a, b) => b.mtime - a.mtime || (flashWeight[b.ext] ?? 0) - (flashWeight[a.ext] ?? 0));
+      result.artifacts = present;
+      if (present.length > 0) {
+        result.artifact = present[0].path;
+        result.artifactKind = present[0].ext;
+      }
+      // Debugging needs symbols, so a .elf/.axf must be used even when a raw
+      // .bin (which carries no debug info) was built more recently.
+      const symbolic = present.filter((item) => item.ext === 'elf' || item.ext === 'axf');
+      result.debugArtifact = symbolic.length > 0 ? symbolic[0].path : (present[0]?.path ?? '');
     } catch (error) {
       result.errors.push(String(error?.message ?? error));
     }

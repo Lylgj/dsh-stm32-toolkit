@@ -56,7 +56,7 @@ export function registerTools(ctx, service, defineTool) {
 
   register(defineTool({
     name: 'stm32_doctor',
-    description: '检查 STM32 开发环境：Keil UV4、arm-none-eabi-gcc/gdb、OpenOCD、STM32CubeProgrammer、已连接的调试器（ST-Link/CMSIS-DAP/J-Link）。',
+    description: '检查 STM32 开发环境：Keil UV4、arm-none-eabi-gcc/gdb、OpenOCD、SEGGER J-Link、STM32CubeProgrammer、已连接的调试器（ST-Link/CMSIS-DAP/J-Link）。',
     parameters: {},
     output: { schema: { type: 'object', additionalProperties: true }, render: (args, value) => text(renderDoctor(value)) },
     timeoutMs: 60_000,
@@ -72,7 +72,7 @@ export function registerTools(ctx, service, defineTool) {
 
   register(defineTool({
     name: 'stm32_config',
-    description: '读取或修改插件配置（工具链路径、调试器类型、OpenOCD 端口/速度、芯片/SVD 等），写入 %DSH_HOME%/stm32/config.json。',
+    description: '读取或修改插件配置（工具链路径、调试器类型/后端、OpenOCD/J-Link 端口与速度、芯片/SVD 等），写入 %DSH_HOME%/stm32/config.json。',
     parameters: {
       patch: { type: 'json', description: '要写入的配置片段，例如 {"probe":"cmsis-dap","adapterSpeed":2000}。省略则只读取当前配置。' },
     },
@@ -130,7 +130,7 @@ export function registerTools(ctx, service, defineTool) {
 
   register(defineTool({
     name: 'stm32_flash',
-    description: '把固件下载到芯片（OpenOCD program verify reset；没有 OpenOCD 时回退到 Keil UV4 -f）。可整片擦除、校验、下载后复位。',
+    description: '把固件下载到芯片（按 backend 选择 SEGGER J-Link 或 OpenOCD；都不可用时回退到 Keil UV4 -f）。可整片擦除、校验、下载后复位。',
     parameters: {
       artifact: { type: 'string', description: '要下载的 .elf/.hex/.bin 路径。省略则使用工程最近构建产物。' },
       address: { type: 'string', description: '仅 .bin 需要，下载地址，例如 0x08000000。' },
@@ -158,7 +158,7 @@ export function registerTools(ctx, service, defineTool) {
 
   register(defineTool({
     name: 'stm32_debug',
-    description: '控制 SWD 调试会话：start/stop/continue/pause/单步/复位/状态。start 会启动 OpenOCD 与 GDB、加载 ELF、复位并运行到 main。',
+    description: '控制 SWD 调试会话：start/stop/continue/pause/单步/复位/状态。start 会启动调试后端（SEGGER J-Link GDB Server 或 OpenOCD）与 GDB、加载 ELF、复位并运行到 main。',
     parameters: {
       action: { type: 'string', enum: ['start', 'stop', 'continue', 'pause', 'stepInto', 'stepOver', 'stepOut', 'stepInstruction', 'reset', 'resetRun', 'status'], description: '调试动作。' },
       elf: { type: 'string', description: 'start 时可指定 ELF/AXF 路径。' },
@@ -602,16 +602,20 @@ function renderDoctor(value) {
   if (!value.ok) return `失败: ${value.error}`;
   const tc = value.toolchain;
   const mark = (okFlag) => (okFlag ? 'OK  ' : '缺失');
+  const jl = tc.jlink ?? {};
   return [
     `Keil MDK: ${mark(tc.keil?.installed)} ${tc.keil?.uv4 ?? ''}`,
     `arm-none-eabi-gcc: ${mark(tc.gcc?.installed)} ${tc.gcc?.version ?? ''}`,
     `arm-none-eabi-gdb: ${mark(Boolean(tc.gcc?.gdb))} ${tc.gcc?.gdb ?? ''}`,
     `OpenOCD: ${mark(tc.openocd?.installed)} ${tc.openocd?.path ?? ''} ${tc.openocd?.version ?? ''}`,
+    `SEGGER J-Link: ${mark(jl.installed)} ${jl.version ?? ''} ${jl.dir ?? ''}`,
     `STM32CubeProgrammer: ${tc.programmers?.cubeProgrammer ?? '未安装'}`,
     `pyOCD: ${tc.programmers?.pyocd ?? '未安装'}`,
     `已连接调试器: ${tc.probes?.probes?.length ? tc.probes.probes.join(', ') : '未检测到'}`,
     `可用后端: ${tc.backend || '无'}`,
-    tc.ready ? '环境就绪，可以编译/调试。' : '环境不完整：至少需要 Keil UV4，或 arm-none-eabi-gcc + gdb + OpenOCD。',
+    tc.ready
+      ? '环境就绪，可以编译/调试。'
+      : '环境不完整：至少需要 Keil UV4，或 arm-none-eabi-gcc + gdb + (OpenOCD 或 SEGGER J-Link)。',
   ].join('\n');
 }
 

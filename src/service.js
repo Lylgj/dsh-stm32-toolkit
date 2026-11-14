@@ -17,6 +17,7 @@ import { DebugSession } from './engine/debug.js';
 import { installComponent } from './engine/install.js';
 import { generateProject, loadIoc, memoryForDevice, parseIoc, setIocValue } from './engine/ioc.js';
 import { flashFirmware } from './engine/openocd.js';
+import { flashFirmwareJLink, findJLinkTools, jlinkDeviceFor, resolveBackend } from './engine/jlink.js';
 import { buildPinMap } from './engine/pins.js';
 import { findArtifact, inspectProject } from './engine/project.js';
 import { RttMonitor, resolveRttAddress } from './engine/rtt.js';
@@ -46,6 +47,10 @@ const DEFAULTS = {
   uv4Path: '',
   openocdPath: '',
   openocdScripts: '',
+  jlinkPath: '',
+  jlinkGDBServerPath: '',
+  jlinkDevice: '',
+  jlinkInterface: 'SWD',
   gccPath: '',
   gdbPath: '',
   makePath: '',
@@ -86,6 +91,12 @@ export class Stm32Service extends EventEmitter {
     this.dataDir = configDir;
     this.configFile = join(configDir, 'config.json');
     this.config = { ...DEFAULTS, ...(readJson(this.configFile, {}) ?? {}) };
+    // `backend` used to be an inert echo of the *build* backend in older configs
+    // ('gcc' / 'keil'). It now selects the debug/flash backend, so normalise any
+    // legacy value to 'auto' instead of letting it fall through unserialised.
+    if (!['auto', 'jlink', 'segger', 'openocd'].includes(String(this.config.backend || '').toLowerCase())) {
+      this.config.backend = 'auto';
+    }
     this.logs = [];
     this.toolchain = null;
     this.toolchainAt = 0;
@@ -119,6 +130,7 @@ export class Stm32Service extends EventEmitter {
     const next = { ...this.config, ...patch, version: CONFIG_VERSION };
     // Paths typed by hand may contain %VARS% or ~.
     for (const key of ['projectDir', 'uvprojx', 'svdPath', 'uv4Path', 'openocdPath', 'openocdScripts',
+      'jlinkPath', 'jlinkGDBServerPath',
       'gccPath', 'gdbPath', 'makePath', 'cmakePath', 'ninjaPath', 'cubeProgrammerPath', 'symbolFile', 'iocFile']) {
       if (typeof next[key] === 'string' && next[key]) next[key] = resolvePathLike(next[key]);
     }
@@ -178,6 +190,8 @@ export class Stm32Service extends EventEmitter {
     if (!this.config.makePath && gcc.make) this.config.makePath = gcc.make;
     if (!this.config.cmakePath && gcc.cmake) this.config.cmakePath = gcc.cmake;
     if (!this.config.ninjaPath && gcc.ninja) this.config.ninjaPath = gcc.ninja;
+    if (!this.config.jlinkPath && this.toolchain.jlink?.exe) this.config.jlinkPath = this.toolchain.jlink.exe;
+    if (!this.config.jlinkGDBServerPath && this.toolchain.jlink?.gdbserver) this.config.jlinkGDBServerPath = this.toolchain.jlink.gdbserver;
     this.refreshDebugConfig();
     return this.toolchain;
   }
@@ -337,6 +351,7 @@ export class Stm32Service extends EventEmitter {
     }
     if (!artifact) throw new Error('找不到可下载的固件（.elf/.hex/.bin），请先构建');
     const openocd = this.config.openocdPath || toolchain.openocd.path;
+    const backend = resolveBackend(this.config, toolchain);
     const ext = artifact.toLowerCase().split('.').pop();
     const address = options.address || (ext === 'bin' ? this.config.binAddress : '');
     const erase = options.erase ?? this.config.flashErase;
@@ -347,7 +362,24 @@ export class Stm32Service extends EventEmitter {
     this.emit('flash-start');
 
     let result;
-    if (openocd) {
+    if (backend === 'jlink') {
+      const jlinkExe = this.config.jlinkPath || toolchain.jlink?.exe;
+      const device = jlinkDeviceFor(this.config, project);
+      if (!jlinkExe) throw new Error('没有可用的 J-Link：未找到 JLink.exe，请安装 SEGGER J-Link 软件或配置 jlinkPath');
+      if (!device) throw new Error('缺少 J-Link 目标器件名（jlinkDevice 或工程 device）');
+      result = await flashFirmwareJLink({
+        exe: jlinkExe,
+        device,
+        interfaceName: this.config.jlinkInterface || 'SWD',
+        speed: this.config.adapterSpeed,
+        firmware: artifact,
+        address,
+        erase,
+        verify,
+        reset,
+      });
+      result.backend = 'jlink';
+    } else if (openocd) {
       result = await flashFirmware({
         openocdPath: openocd,
         interfaceCfg: options.interfaceCfg || project.interfaceCfg || this.config.interfaceCfg,
@@ -368,7 +400,7 @@ export class Stm32Service extends EventEmitter {
       const keil = await run(this.config.uv4Path, args, { timeoutMs: 120_000 });
       result = { ok: keil.code === 0, backend: 'keil', output: keil.stdout + keil.stderr, durationMs: keil.durationMs };
     } else {
-      throw new Error('没有可用的下载器：需要 OpenOCD，或已安装的 Keil UV4');
+      throw new Error('没有可用的下载器：需要 SEGGER J-Link（backend=jlink）、OpenOCD，或已安装的 Keil UV4');
     }
     this.lastFlash = {
       ...result,
@@ -683,12 +715,21 @@ export class Stm32Service extends EventEmitter {
     const project = await this.inspect(options.dir || this.config.projectDir);
     await this.getToolchain();
     const toolchain = this.toolchain;
-    const elf = options.elf || project.artifact
+    // Debugging needs symbols: prefer the debug artifact (.elf/.axf) over a raw
+    // .bin that may have been built more recently.
+    const elf = options.elf || project.debugArtifact || project.artifact
       || findArtifact(project.buildDir || project.root).find((a) => a.ext === 'elf' || a.ext === 'axf')?.path;
     if (!elf) throw new Error('找不到 ELF/AXF 文件，请先构建');
+    const backend = resolveBackend(this.config, toolchain);
+    const jlinkTools = findJLinkTools(this.config);
     const config = {
       ...this.debugConfig(),
+      backend,
       openocdPath: this.config.openocdPath || toolchain.openocd.path,
+      jlinkPath: this.config.jlinkPath || jlinkTools.exe,
+      jlinkGDBServerPath: this.config.jlinkGDBServerPath || jlinkTools.gdbserver,
+      jlinkDevice: jlinkDeviceFor(this.config, project),
+      jlinkInterface: this.config.jlinkInterface || 'SWD',
       gdbPath: this.config.gdbPath || findGccTools(this.config).gdb,
       targetCfg: options.targetCfg || project.targetCfg || this.config.targetCfg,
       interfaceCfg: options.interfaceCfg || project.interfaceCfg || this.config.interfaceCfg,
@@ -696,7 +737,7 @@ export class Stm32Service extends EventEmitter {
       svd: this.svd(),
     };
     this.debug.config = config;
-    this.log(`启动调试: ${elf}`);
+    this.log(`启动调试(${backend}): ${elf}`);
     const state = await this.debug.start({
       elf,
       interfaceCfg: config.interfaceCfg,
@@ -753,6 +794,11 @@ export class Stm32Service extends EventEmitter {
         svdPath: this.config.svdPath,
         uv4Path: this.config.uv4Path,
         openocdPath: this.config.openocdPath,
+        jlinkPath: this.config.jlinkPath,
+        jlinkGDBServerPath: this.config.jlinkGDBServerPath,
+        jlinkDevice: this.config.jlinkDevice || this.project?.device || '',
+        jlinkInterface: this.config.jlinkInterface,
+        flashBackend: resolveBackend(this.config, this.toolchain),
         gdbPath: this.config.gdbPath,
         probe: this.config.probe,
         interfaceCfg: this.config.interfaceCfg,
@@ -774,6 +820,7 @@ export class Stm32Service extends EventEmitter {
           keil: { installed: this.toolchain.keil.installed, uv4: this.toolchain.keil.uv4, packRoot: this.toolchain.keil.packRoot },
           gcc: { installed: this.toolchain.gcc.installed, version: this.toolchain.gcc.version, gcc: this.toolchain.gcc.gcc, gdb: this.toolchain.gcc.gdb, gdbVersion: this.toolchain.gcc.gdbVersion },
           openocd: this.toolchain.openocd,
+          jlink: this.toolchain.jlink,
           programmers: this.toolchain.programmers,
           probes: this.toolchain.probes,
           ready: this.toolchain.ready,

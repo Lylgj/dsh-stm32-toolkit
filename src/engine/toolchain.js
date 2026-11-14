@@ -9,6 +9,7 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { dirExists, fileExists, run, which } from '../util.js';
+import { findJLinkTools } from './jlink.js';
 
 const KEIL_ROOTS = () => {
   const roots = [
@@ -87,11 +88,13 @@ export function findProgrammers(configured = {}) {
   const jlinkCandidate = configured.jlinkPath || which('JLinkExe') || which('JLink.exe');
   // JDK ships an unrelated `jlink.exe`; only trust a SEGGER install.
   const jlink = jlinkCandidate && !/\\jdk[-\\]/i.test(jlinkCandidate) ? jlinkCandidate : null;
+  const jlinkTools = findJLinkTools(configured);
   return {
     cubeProgrammer,
     pyocd: configured.pyocdPath || which('pyocd'),
     stlink: which('ST-LINK_CLI') || which('st-flash'),
-    jlink,
+    jlink: jlink || jlinkTools.exe,
+    jlinkGdbServer: jlinkTools.gdbserver,
   };
 }
 
@@ -135,6 +138,19 @@ export async function detectToolchain(config = {}) {
     || (config.openocdBinDir ? join(config.openocdBinDir, process.platform === 'win32' ? 'openocd.exe' : 'openocd') : null);
   const openocd = openocdPath && fileExists(openocdPath) ? openocdPath : null;
 
+  const jlinkTools = findJLinkTools(config);
+  const jlinkVersion = (() => {
+    const m = /JLink_V(\d)(\d+)/i.exec(jlinkTools.dir || '');
+    return m ? `V${m[1]}.${m[2]}` : '';
+  })();
+  const jlink = {
+    exe: jlinkTools.exe,
+    gdbserver: jlinkTools.gdbserver,
+    dir: jlinkTools.dir,
+    version: jlinkVersion,
+    installed: Boolean(jlinkTools.exe && jlinkTools.gdbserver),
+  };
+
   const [gccVersion, gdbVersion, openocdVersion, probes] = await Promise.all([
     versionOf(gcc.gcc, ['--version']),
     versionOf(gcc.gdb, ['--version']),
@@ -142,14 +158,19 @@ export async function detectToolchain(config = {}) {
     detectProbes().catch(() => ({ supported: false, probes: [] })),
   ]);
 
+  // J-Link needs only GDB + its own server (no OpenOCD).
+  const jlinkReady = Boolean(gcc.gcc && gcc.gdb && jlink.installed);
+
   return {
     keil: { uv4, packRoot, installed: Boolean(uv4) },
     gcc: { ...gcc, version: gccVersion, gdbVersion, installed: Boolean(gcc.gcc && gcc.gdb) },
     openocd: { path: openocd, version: openocdVersion, installed: Boolean(openocd) },
+    jlink,
     programmers,
     probes,
     backend: uv4 ? 'keil' : gcc.gcc ? 'gcc' : '',
-    ready: Boolean(uv4 || (gcc.gcc && gcc.gdb && openocd)),
+    ready: Boolean(uv4 || (gcc.gcc && gcc.gdb && (openocd || jlink.installed))),
+    jlinkReady,
   };
 }
 

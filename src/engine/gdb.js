@@ -211,7 +211,10 @@ export class GdbSession extends EventEmitter {
 
   async connect(host = 'localhost', port = 3333) {
     const result = await this.send(`-target-select extended-remote ${host}:${port}`, { timeoutMs: 20_000 });
-    if (!result.ok) throw new Error(result.data.msg || '连接 OpenOCD 失败');
+    // GDB/MI answers `-target-select` with `^connected`, not `^done`; both mean
+    // the remote target is attached, so accept either as success.
+    const ok = result.class === 'done' || result.class === 'connected';
+    if (!ok) throw new Error(result.data.msg || '连接 GDB Server 失败');
     return result;
   }
 
@@ -219,13 +222,21 @@ export class GdbSession extends EventEmitter {
     return this.send('-target-disconnect', { timeoutMs: 10_000 });
   }
 
-  async resetAndHalt() {
+  async resetAndHalt(backend = 'openocd') {
+    // OpenOCD accepts a combined `reset halt`; SEGGER's GDB Server does not
+    // (it rejects "halt" as a reset type), so reset and halt are two steps.
+    if (backend === 'jlink') {
+      await this.monitor('reset');
+      await this.monitor('halt');
+      return;
+    }
     await this.monitor('reset halt');
   }
 
   async continue() {
     const result = await this.send('-exec-continue');
-    if (!result.ok) throw new Error(result.data.msg || '继续执行失败');
+    // GDB/MI acknowledges execution commands with `^running`, not `^done`.
+    if (!(result.class === 'done' || result.class === 'running')) throw new Error(result.data.msg || '继续执行失败');
     return result;
   }
 
@@ -235,25 +246,25 @@ export class GdbSession extends EventEmitter {
 
   async stepInto() {
     const result = await this.send('-exec-step');
-    if (!result.ok) throw new Error(result.data.msg || '单步失败');
+    if (!(result.class === 'done' || result.class === 'running')) throw new Error(result.data.msg || '单步失败');
     return result;
   }
 
   async stepOver() {
     const result = await this.send('-exec-next');
-    if (!result.ok) throw new Error(result.data.msg || '单步跳过失败');
+    if (!(result.class === 'done' || result.class === 'running')) throw new Error(result.data.msg || '单步跳过失败');
     return result;
   }
 
   async stepOut() {
     const result = await this.send('-exec-finish');
-    if (!result.ok) throw new Error(result.data.msg || '跳出函数失败');
+    if (!(result.class === 'done' || result.class === 'running')) throw new Error(result.data.msg || '跳出函数失败');
     return result;
   }
 
   async stepInstruction() {
     const result = await this.send('-exec-step-instruction');
-    if (!result.ok) throw new Error(result.data.msg || '指令单步失败');
+    if (!(result.class === 'done' || result.class === 'running')) throw new Error(result.data.msg || '指令单步失败');
     return result;
   }
 

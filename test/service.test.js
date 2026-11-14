@@ -151,7 +151,7 @@ test('plugin apply registers tools, command, route and panel slots', () => {
   assert.equal(registered.routes[0].kind, 'prefix');
 });
 
-test('HTTP route serves state, project and SVD to the panel', async () => {
+test('HTTP route serves state, project and SVD to the panel', { skip: !existsSync(KEIL_PROJECT_DIR) || !existsSync(REAL_SVD) }, async () => {
   const { ctx, registered } = makeCtx();
   apply(ctx);
   const handler = registered.routes[0].handler;

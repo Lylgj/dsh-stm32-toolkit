@@ -1,6 +1,6 @@
 {
   "name": "@lylgj/dsh-stm32-toolkit",
-  "description": "STM32 build/flash/debug toolkit for DSH: Keil UV4 and arm-none-eabi + OpenOCD + GDB, breakpoints, core and SVD peripheral registers, memory and disassembly.",
+  "description": "STM32 build/flash/debug toolkit for DSH: Keil UV4 and arm-none-eabi + OpenOCD/SEGGER J-Link + GDB, breakpoints, core and SVD peripheral registers, memory and disassembly.",
   "version": "0.1.0",
   "entry": {
     "name": "@lylgj/dsh-stm32-toolkit",
