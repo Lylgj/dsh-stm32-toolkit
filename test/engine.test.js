@@ -270,3 +270,162 @@ test('artifact discovery returns a newest-first list', { skip: !existsSync('D:\\
     assert.ok(typeof item.mtime === 'number');
   }
 });
+
+// --- IAP / bootloader bypass ------------------------------------------------
+// On boards with a bootloader the reset handler strands the CPU in the boot
+// region, so a plain `continue` never reaches the application and `main` never
+// hits. jumpPastBootloader() should read the application vector table, then
+// force SP/PC to its initial SP + Reset_Handler.
+
+import { DebugSession } from '../src/engine/debug.js';
+
+function fakeGdb({ pc, memory, symbols }) {
+  const log = [];
+  return {
+    active: true,
+    log,
+    async readMemory(address, count) {
+      const key = Number(typeof address === 'string' ? parseInt(address, 16) : address);
+      return { contents: memory[key] ?? '', raw: {} };
+    },
+    async evalExpression(expr) {
+      log.push(expr);
+      if (expr === '$pc') return { value: `0x${pc.toString(16)}` };
+      if (expr.startsWith('$sp')) return { value: expr.split('=')[1].trim() };
+      if (expr.startsWith('$pc')) return { value: expr.split('=')[1].trim() };
+      if (expr === '(void*)Reset_Handler') return { value: symbols.reset ? `0x${symbols.reset.toString(16)}` : '' };
+      return { value: '' };
+    },
+  };
+}
+
+test('jumpPastBootloader moves SP/PC into the application image', async () => {
+  const session = new DebugSession({});
+  // Vector table at 0x08010000: SP=0x20020000, Reset=0x0803a24c (little endian).
+  const table = '00000220' + '4ca20308';
+  session.gdb = fakeGdb({ pc: 0x08001c20, memory: { 0x08010000: table }, symbols: {} });
+  session.memory = { rom: [{ start: 0x08010000, size: 0x100000 }] };
+  const moved = await session.jumpPastBootloader();
+  assert.equal(moved, true);
+  assert.ok(session.gdb.log.includes('$sp = 0x20020000'), 'should set SP');
+  assert.ok(session.gdb.log.includes('$pc = 0x803a24c'), 'should set PC to Reset_Handler');
+});
+
+// On an IAP board the reset handler runs from the boot region, so the debugger
+// always re-installs the application's own SP/Reset — even if `monitor reset`
+// happened to land inside the app — which is exactly what a working bootloader
+// would do. A plain 0x08000000 image must never be touched.
+test('jumpPastBootloader is a no-op on a non-offset 0x08000000 image', async () => {
+  const session = new DebugSession({});
+  session.gdb = fakeGdb({ pc: 0x0801c0b4, memory: {}, symbols: {} });
+  session.memory = { rom: [{ start: 0x08000000, size: 0x100000 }] };
+  const moved = await session.jumpPastBootloader();
+  assert.equal(moved, false);
+  assert.ok(!session.gdb.log.some((x) => x.includes('=')), 'must not write registers');
+});
+
+test('jumpPastBootloader falls back to Reset_Handler when the table is unreadable', async () => {
+  const session = new DebugSession({});
+  session.gdb = fakeGdb({ pc: 0x08000000, memory: {}, symbols: { reset: 0x0803a24d } });
+  session.memory = { rom: [{ start: 0x08010000, size: 0x100000 }] };
+  const moved = await session.jumpPastBootloader();
+  assert.equal(moved, true);
+  assert.ok(session.gdb.log.some((x) => x.startsWith('$pc = 0x803a24d')));
+});
+
+// --- run-to-main retry / temporary breakpoints ------------------------------
+// The IAP board can halt on a spurious SIGTRAP or a leftover trap before it
+// reaches main. runToMain() must keep retrying and only return once it truly
+// stops inside main; and the main breakpoint must be temporary (-t) so it never
+// lingers to disturb a later continue/reset.
+test('runToMain retries past spurious stops and arms a temporary breakpoint', async () => {
+  const gdb = {
+    active: true,
+    calls: [],
+    bptOpts: null,
+    async evalExpression(expr) { if (expr === '(void*)main') return { value: '0x0801c0b4' }; return { value: '' }; },
+    async setBreakpoint(loc, opts) { this.bptOpts = { loc, opts }; return { number: 1 }; },
+    async continue() { this.calls.push('continue'); },
+  };
+  const session = new DebugSession({});
+  session.gdb = gdb;
+  session.backend = 'openocd';
+  session.jumpPastBootloader = async () => false;
+  const stops = [
+    { reason: 'signal-received', func: '??', file: '', line: 0, addr: '0x08001c20' },
+    { reason: 'signal-received', func: 'tcp_write', file: 'tcp_out.c', line: 807, addr: '0x0801f1a8' },
+    { reason: 'breakpoint-hit', func: 'main', file: 'main.c', line: 861, addr: '0x0801c0b4' },
+  ];
+  session.waitForStop = async () => stops.shift();
+
+  await session.runToMain();
+
+  assert.equal(gdb.bptOpts.opts.temporary, true, 'main breakpoint must be temporary');
+  assert.equal(gdb.calls.length, 3, 'must retry until main is reached');
+  assert.equal(session.lastStop ?? null, null, 'no stop recorded directly by the loop');
+});
+
+test('_atMain recognises real main stops only', () => {
+  const session = new DebugSession({});
+  assert.equal(session._atMain({ func: 'main', file: 'main.c', line: 861, reason: 'breakpoint-hit' }), true);
+  assert.equal(session._atMain({ func: '??', file: '', line: 0, reason: 'signal-received' }), false);
+  assert.equal(session._atMain({ func: 'tcp_write', file: 'tcp_out.c', line: 807, reason: 'breakpoint-hit' }), false);
+  assert.equal(session._atMain(null), false);
+});
+
+test('_describeStop never leaks the GDB ?? placeholder', () => {
+  const session = new DebugSession({});
+  const text = session._describeStop({ func: '??', file: '', line: 0, reason: 'signal-received', addr: '0x08001c20' });
+  assert.ok(!text.includes('??'));
+  assert.ok(text.includes('0x8001c20'));
+});
+
+// --- reset with armed breakpoints -------------------------------------------
+// "复位" should behave like Keil: reset, complete the IAP jump, then run until
+// one of the user's breakpoints fires. With no breakpoints it just stays halted.
+test('reset jumps past the bootloader and runs to the armed breakpoint', async () => {
+  const gdb = {
+    active: true,
+    calls: [],
+    async monitor(cmd) { this.calls.push(`monitor:${cmd}`); },
+    async continue() { this.calls.push('continue'); },
+    async interrupt() { this.calls.push('interrupt'); },
+  };
+  const session = new DebugSession({});
+  session.gdb = gdb;
+  session.backend = 'jlink';
+  session.breakpoints = [{ number: 1, type: 'breakpoint', enabled: true }];
+  let jumped = 0;
+  session.jumpPastBootloader = async () => { jumped += 1; return true; };
+  session.refreshStop = async () => null;
+  session.waitForStop = async () => ({ reason: 'breakpoint-hit', func: 'main', file: 'main.c', line: 861 });
+
+  await session.reset(true);
+
+  assert.ok(gdb.calls.includes('monitor:reset'));
+  assert.ok(gdb.calls.includes('monitor:halt'));
+  assert.equal(jumped, 1, 'must complete the bootloader jump after reset');
+  assert.ok(gdb.calls.includes('continue'), 'must run to the user breakpoint');
+});
+
+test('reset leaves the target halted when no breakpoints are armed', async () => {
+  const gdb = {
+    active: true,
+    calls: [],
+    async monitor(cmd) { this.calls.push(`monitor:${cmd}`); },
+    async continue() { this.calls.push('continue'); },
+  };
+  const session = new DebugSession({});
+  session.gdb = gdb;
+  session.backend = 'jlink';
+  session.breakpoints = [];
+  let jumped = 0;
+  session.jumpPastBootloader = async () => { jumped += 1; return true; };
+  session.refreshStop = async () => null;
+  session.waitForStop = async () => null;
+
+  await session.reset(true);
+
+  assert.equal(jumped, 1, 'still completes the bootloader jump');
+  assert.ok(!gdb.calls.includes('continue'), 'no continue without breakpoints');
+});

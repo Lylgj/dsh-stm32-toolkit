@@ -57,6 +57,8 @@ export class DebugSession extends EventEmitter {
     try {
       if (!options.elf) throw new Error('缺少 ELF 文件路径，无法开始调试');
       this.elf = options.elf;
+      this.appBase = null;
+      this.memory = this.config?.memory ?? null;
       if (!this.config.gdbPath) throw new Error('未找到 arm-none-eabi-gdb');
       const backend = this.config.backend === 'jlink' ? 'jlink' : 'openocd';
       this.backend = backend;
@@ -147,26 +149,129 @@ export class DebugSession extends EventEmitter {
   /** Temporary breakpoint on `main`, continue, wait for the halt. */
   async runToMain() {
     const gdb = this.requireGdb();
-    // SEGGER's GDB Server rejects `reset halt`, and a target left running from a
-    // previous stage makes `-exec-continue` fail with "thread is running". So on
-    // the jlink backend re-establish a known halted state at the reset vector
-    // before arming the breakpoint.
-    if (this.backend === 'jlink') {
-      await gdb.resetAndHalt('jlink').catch(() => null);
-      this.running = false;
-    }
     const main = await gdb.evalExpression('(void*)main').catch(() => null);
     if (!main) return;
-    await gdb.setBreakpoint('main', { pending: false }).catch(() => null);
-    this.running = true;
-    await gdb.continue().catch(() => null);
-    const stop = await this.waitForStop(15_000).catch(() => null);
-    if (!stop && this.running) {
-      // Never leave the target free-running: a later step/pause would then race.
-      await gdb.interrupt().catch(() => null);
-      await this.waitForStop(5_000).catch(() => null);
-      this.log('运行到 main 超时，已暂停目标');
+    // A temporary breakpoint (-t) is removed by GDB as soon as it fires, so no
+    // stale breakpoint is left behind to surprise a later "continue"/reset.
+    const armed = await gdb.setBreakpoint('main', { pending: false, temporary: true }).catch(() => null);
+    if (!armed) return;
+
+    // The IAP board can emit a spurious SIGTRAP (or land on a leftover trap)
+    // before it actually reaches main. So retry a bounded number of times: on
+    // every attempt re-establish the application SP/PC (jumpPastBootloader) and
+    // continue again, stopping only when we truly halt at main. The temporary
+    // breakpoint survives a reset, so it does not need re-arming.
+    const attempts = 4;
+    for (let i = 0; i < attempts; i += 1) {
+      if (this.backend === 'jlink') {
+        await gdb.resetAndHalt('jlink').catch(() => null);
+        this.running = false;
+      }
+      await this.jumpPastBootloader().catch(() => false);
+      this.running = true;
+      await gdb.continue().catch(() => null);
+      const stop = await this.waitForStop(15_000).catch(() => null);
+      if (!stop) {
+        if (this.running) {
+          await gdb.interrupt().catch(() => null);
+          await this.waitForStop(5_000).catch(() => null);
+        }
+        this.log('运行到 main 超时，已暂停目标');
+        return;
+      }
+      if (this._atMain(stop)) return;
+      this.log(`运行到 main：本次停在 ${this._describeStop(stop)}，重试 ${i + 1}/${attempts}`);
     }
+    this.log('运行到 main：多次尝试仍未精确命中 main，已停在当前断点');
+  }
+
+  /** True when a stop event landed inside `main`. */
+  _atMain(stop) {
+    if (!stop) return false;
+    const fn = String(stop.func || '');
+    if (/^main$/.test(fn)) return true;
+    const file = String(stop.file || '').replace(/\\/g, '/');
+    return /main\.c$/i.test(file) && stop.reason === 'breakpoint-hit';
+  }
+
+  /** Short human description of a stop, used only for our own logs. */
+  _describeStop(stop) {
+    if (!stop) return '未知位置';
+    const parts = [];
+    if (stop.func && stop.func !== '??') parts.push(`${stop.func}()`);
+    if (stop.file) parts.push(`${stop.file}${stop.line ? `:${stop.line}` : ''}`);
+    if (stop.reason && stop.reason !== 'signal-received') parts.push(`· ${stop.reason}`);
+    return parts.length ? parts.join(' ') : `0x${Number(stop.addr || 0).toString(16)}`;
+  }
+
+  /**
+   * IAP 板子复位后先跑引导程序，只有引导真正跳到应用区才会执行到用户代码；
+   * 直接 continue 会一直停在 bootloader 里，main 断点永远打不中。这里读出
+   * 应用向量表（默认 0x08010000）里的 SP / Reset，然后把 PC、SP 直接设过去，
+   * 相当于手工完成引导的跳转，之后 continue 就能跑到 main。
+   * 返回 true 表示已经跳到应用区。
+   */
+  async jumpPastBootloader() {
+    const gdb = this.requireGdb();
+    const base = await this.applicationBase();
+    if (!base) return false;
+
+    // Vector table: [0]=initial SP, [1]=Reset_Handler.
+    let sp = null;
+    let reset = null;
+    try {
+      const mem = await gdb.readMemory(hex(base), 8);
+      const bytes = Buffer.from(String(mem.contents || '').replace(/\s+/g, ''), 'hex');
+      if (bytes.length >= 8) {
+        sp = bytes.readUInt32LE(0);
+        reset = bytes.readUInt32LE(4);
+      }
+    } catch (error) {
+      this.log(`读取应用向量表失败: ${error.message}`);
+    }
+
+    if (!reset || reset === 0xffffffff || reset === 0) {
+      const sym = await gdb.evalExpression('(void*)Reset_Handler').catch(() => null);
+      const parsed = sym ? Number.parseInt(String(sym.value).replace(/^0x/i, ''), 16) : NaN;
+      if (Number.isFinite(parsed)) reset = parsed;
+    }
+    if (!reset || reset === 0xffffffff) return false;
+
+    const baseHex = `0x${base.toString(16)}`;
+    // No offset image (classic 0x08000000 layout) => after reset the CPU already
+    // sits inside the application, so there is nothing to bypass.
+    if (base <= 0x08000000) return false;
+
+    // IAP layout: the reset handler runs from the boot region. `monitor reset`
+    // may land the CPU either in the bootloader or (racy) inside the app, so do
+    // not trust the PC — always install the application's own SP/Reset, which
+    // is what a working bootloader would do anyway.
+    const pc = await gdb.evalExpression('$pc').catch(() => null);
+
+    this.log(`IAP 布局：手工跳转到应用向量表 ${baseHex}（PC=${pc?.value ?? '?'}），SP=0x${(sp >>> 0).toString(16)}，Reset=0x${reset.toString(16)}`);
+    if (sp && sp !== 0xffffffff) {
+      await gdb.evalExpression(`$sp = 0x${(sp >>> 0).toString(16)}`).catch(() => null);
+    }
+    await gdb.evalExpression(`$pc = 0x${reset.toString(16)}`);
+    return true;
+  }
+
+  /** Application vector-table base: from the project memory map, else 0x08000000. */
+  async applicationBase() {
+    if (Number.isFinite(this.appBase)) return this.appBase;
+    let base = null;
+    // Prefer the scatter/memory map the exporter already parsed.
+    try {
+      const mem = this.memory || this.config?.memory;
+      const region = mem?.rom?.[0];
+      if (region && Number.isFinite(region.start)) base = region.start;
+    } catch { /* ignore */ }
+    // No memory map: assume the classic single-image layout at 0x08000000. On
+    // such a board the CPU is already inside the image after reset, so the
+    // PC<base guard below keeps us from touching anything.
+    if (!Number.isFinite(base)) base = 0x08000000;
+    this.appBase = base;
+    return base;
   }
 
   async waitForStop(timeoutMs) {
@@ -258,9 +363,29 @@ export class DebugSession extends EventEmitter {
       await gdb.monitor(halt ? 'reset halt' : 'reset run');
     }
     this.running = !halt;
-    if (halt) {
-      await this.waitForStop(3000).catch(() => null);
-      await this.refreshStop().catch(() => null);
+    if (!halt) return { ok: true, state: this.state() };
+
+    await this.waitForStop(3000).catch(() => null);
+    await this.refreshStop().catch(() => null);
+
+    // IAP board: after reset the CPU sits in the bootloader, so a breakpoint in
+    // the application would never be reached. Complete the bootloader's job
+    // (install the app SP/PC) and, if the user has breakpoints armed, run on
+    // until one of them fires — that is what "reset" means in Keil too.
+    await this.jumpPastBootloader().catch(() => false);
+    const userBkpts = (this.breakpoints || []).filter((b) => b && b.enabled !== false && b.type === 'breakpoint');
+    if (userBkpts.length) {
+      this.running = true;
+      await gdb.continue().catch(() => null);
+      const stop = await this.waitForStop(15_000).catch(() => null);
+      if (!stop) {
+        if (this.running) {
+          await gdb.interrupt().catch(() => null);
+          await this.waitForStop(3_000).catch(() => null);
+        }
+        await this.refreshStop().catch(() => null);
+        this.log('复位后运行超时，已暂停目标');
+      }
     }
     return { ok: true, state: this.state() };
   }
@@ -272,6 +397,7 @@ export class DebugSession extends EventEmitter {
       hardware: options.hardware,
       ignoreCount: options.ignoreCount,
       pending: options.pending,
+      temporary: options.temporary,
     });
     this.breakpoints = await gdb.listBreakpoints().catch(() => this.breakpoints);
     return bkpt;

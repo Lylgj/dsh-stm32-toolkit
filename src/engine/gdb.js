@@ -271,6 +271,9 @@ export class GdbSession extends EventEmitter {
   async setBreakpoint(location, options = {}) {
     const flags = [];
     if (options.hardware) flags.push('-h');
+    // `-t` = temporary breakpoint: GDB deletes it as soon as it is hit. Used by
+    // "run to main" so no leftover breakpoint keeps re-arming on every run.
+    if (options.temporary) flags.push('-t');
     if (options.pending !== false) flags.push('-f');
     if (options.condition) flags.push(`-c ${miQuote(options.condition)}`);
     if (options.ignoreCount) flags.push(`-i ${Number(options.ignoreCount)}`);
