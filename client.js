@@ -56,8 +56,22 @@ window.__ModuleLoader__.load({
 
     function formatStop(stop) {
       if (!stop) return '';
-      const where = [stop.file, stop.line ? `:${stop.line}` : ''].join('');
-      return [stop.func ? `${stop.func}()` : '', where, stop.reason ? `· ${stop.reason}` : ''].filter(Boolean).join(' ');
+      // GDB reports `??` for func/file when the PC is in a region it has no
+      // symbols for (bootloader, a stale trap, ...). Showing "??()" only
+      // confuses; fall back to the raw address instead.
+      const func = stop.func && stop.func !== '??' && stop.func !== '?' ? stop.func : '';
+      const file = stop.file && stop.file !== '??' ? stop.file : '';
+      const loc = file ? `${file}${stop.line ? `:${stop.line}` : ''}` : '';
+      const head = [func ? `${func}()` : '', loc].filter(Boolean).join(' ');
+      let reason = '';
+      if (stop.reason === 'signal-received') reason = '· 收到暂停信号';
+      else if (stop.reason && stop.reason !== 'breakpoint-hit') reason = `· ${stop.reason}`;
+      if (!head) {
+        const addr = Number(stop.addr);
+        const where = Number.isFinite(addr) && addr ? `地址 0x${addr.toString(16)}` : '未知位置';
+        return [where, reason].filter(Boolean).join(' ');
+      }
+      return [head, reason].filter(Boolean).join(' ');
     }
 
     // ------------------------------------------------------------ styles
@@ -108,8 +122,6 @@ window.__ModuleLoader__.load({
       .stm32-tab.active { opacity:1; font-weight:600; background:rgba(128,128,128,.1);
         box-shadow:inset 0 -2px 0 #3b82f6; }
       .stm32-body { flex:1; min-height:0; overflow:auto; padding:8px 10px 12px; }
-      .stm32-console { font-family:var(--dsw-font-mono, "Cascadia Code", Consolas, monospace); font-size:11.5px;
-        white-space:pre-wrap; word-break:break-word; margin:0; line-height:1.55; }
       .stm32-log-info { opacity:.7; }
       .stm32-log-error { color:#e05c5c; }
       .stm32-log-warn { color:#c9a227; }
@@ -148,6 +160,118 @@ window.__ModuleLoader__.load({
       .stm32-hint { opacity:.6; font-size:11px; line-height:1.5; }
       .stm32-badge-err { color:#e05c5c; }
       .stm32-scroll { max-height:calc(100vh - 230px); overflow:auto; }
+
+      /* ---- console: fixed header, only the log body scrolls ---- */
+      .stm32-body.stm32-body-fill { padding:0; overflow:hidden; display:flex; flex-direction:column; }
+      .stm32-console-pane { display:flex; flex-direction:column; flex:1; min-height:0; padding:8px 10px 4px; }
+      .stm32-console-head { display:flex; align-items:center; justify-content:space-between; gap:8px;
+        padding-bottom:6px; flex:0 0 auto; }
+      .stm32-console-scroll { flex:1; min-height:0; overflow:auto; }
+      .stm32-console { font-family:var(--dsw-font-mono, "Cascadia Code", Consolas, monospace); font-size:11.5px;
+        white-space:pre-wrap; word-break:break-word; margin:0; line-height:1.55; }
+
+      /* ---- source / breakpoint viewer ---- */
+      .stm32-src-pane { display:flex; flex-direction:column; flex:1; min-height:0; }
+      .stm32-src-toolbar { display:flex; align-items:center; gap:6px; margin-bottom:6px; flex-wrap:wrap; flex:0 0 auto; }
+      .stm32-src-toolbar .stm32-input { min-width:220px; }
+      .stm32-src-scroll { flex:1; min-height:0; overflow:auto; border:1px solid rgba(128,128,128,.22);
+        border-radius:8px; background:rgba(128,128,128,.03); }
+      .stm32-src-table { font-family:var(--dsw-font-mono, "Cascadia Code", Consolas, monospace);
+        font-size:11.5px; line-height:1.55; min-width:100%; }
+      .stm32-src-line { display:flex; align-items:stretch; }
+      .stm32-src-line:hover { background:rgba(128,128,128,.08); }
+      .stm32-src-line.active { background:rgba(59,130,246,.18); }
+      /* Breakpoint margin: its own wide column left of the line numbers, so the
+         dot never crowds the digits (Keil keeps a separate breakpoint gutter). */
+      .stm32-src-bp { flex:0 0 auto; width:24px; box-sizing:border-box; display:flex; align-items:center;
+        justify-content:center; border:0; background:none; cursor:pointer; color:transparent;
+        font-size:17px; line-height:1; padding:0; user-select:none; }
+      .stm32-src-bp:hover { color:rgba(224,92,92,.35); }
+      .stm32-src-bp.has-bp { color:#e05c5c; }
+      .stm32-src-gutter { flex:0 0 auto; width:44px; box-sizing:border-box; text-align:right;
+        padding:0 10px 0 2px; border:0; border-right:1px solid rgba(128,128,128,.14);
+        background:none; color:inherit; opacity:.45; cursor:pointer;
+        font:inherit; font-size:11px; user-select:none; white-space:nowrap; }
+      .stm32-src-gutter:hover { opacity:.9; background:rgba(128,128,128,.12); }
+      .stm32-src-code { flex:1; white-space:pre; padding:0 12px 0 10px; }
+      .stm32-src-marker { color:#3b82f6; font-weight:700; }
+
+      /* ---- debug window right panel tabs ---- */
+      .stm32-dbg-rtabs { display:flex; gap:2px; padding:4px 6px; flex:0 0 auto;
+        border-bottom:1px solid rgba(128,128,128,.2); overflow-x:auto; scrollbar-width:none; }
+      .stm32-dbg-rtabs::-webkit-scrollbar { display:none; }
+      .stm32-dbg-rtab { padding:4px 8px; border:0; border-radius:6px; background:none; color:inherit;
+        opacity:.6; cursor:pointer; font:inherit; font-size:11.5px; white-space:nowrap; }
+      .stm32-dbg-rtab:hover { opacity:.9; background:rgba(128,128,128,.1); }
+      .stm32-dbg-rtab.active { opacity:1; font-weight:600; background:rgba(59,130,246,.16); }
+      .stm32-dbg-rbody { flex:1; min-height:0; overflow:auto; }
+      .stm32-dbg-rbody .stm32-card { border:0; border-radius:0; background:transparent; }
+      .stm32-dbg-rbody .stm32-grid { grid-template-columns:1fr; gap:10px; }
+      .stm32-dbg-rbody .stm32-scroll { max-height:none; }
+      /* ---- source context menu ---- */
+      .stm32-ctxmenu { position:fixed; z-index:10000; min-width:150px; padding:4px;
+        background:Canvas; color:CanvasText; border:1px solid rgba(128,128,128,.35);
+        border-radius:8px; box-shadow:0 10px 30px rgba(0,0,0,.35); font-size:12px; }
+      .stm32-ctxitem { padding:6px 10px; border-radius:6px; cursor:pointer; white-space:nowrap; }
+      .stm32-ctxitem:hover { background:rgba(59,130,246,.18); }
+      .stm32-ctxitem.disabled { opacity:.4; cursor:default; }
+      .stm32-ctxitem.disabled:hover { background:none; }
+
+      /* ---- source tree (debug window left pane) ---- */
+      .stm32-tree { display:flex; flex-direction:column; flex:1; min-height:0; }
+      .stm32-tree-head { display:flex; align-items:center; gap:6px; padding:6px 8px; flex:0 0 auto;
+        border-bottom:1px solid rgba(128,128,128,.18); font-weight:600; font-size:11.5px; }
+      .stm32-tree-scroll { flex:1; min-height:0; overflow:auto; padding:4px 0 8px; }
+      .stm32-tree-group { display:flex; align-items:center; gap:4px; padding:5px 8px 3px; font-size:11px;
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis; letter-spacing:.02em; cursor:pointer;
+        user-select:none; opacity:.6; font-weight:600; }
+      .stm32-tree-group:hover { opacity:.9; background:rgba(128,128,128,.08); }
+      .stm32-tree-caret { display:inline-block; width:10px; text-align:center; font-size:9px; opacity:.7; }
+      .stm32-tree-count { margin-left:auto; opacity:.6; font-weight:400; }
+      .stm32-tree-item { display:flex; align-items:center; gap:4px; padding:3px 8px 3px 24px;
+        cursor:pointer; font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+        font-family:var(--dsw-font-mono, Consolas, monospace); opacity:.85; user-select:none; }
+      .stm32-tree-item:hover { background:rgba(128,128,128,.12); opacity:1; }
+      .stm32-tree-item.active { background:rgba(59,130,246,.18); opacity:1; font-weight:600; }
+      .stm32-tree-item.has-bp::before { content:'●'; color:#e05c5c; font-size:9px; }
+      .stm32-tree-item.has-bp { padding-left:15px; }
+
+      /* ---- debug window (Keil-style overlay) ---- */
+      .stm32-dbg-mask { position:fixed; inset:0; z-index:9998; background:rgba(15,18,24,.45);
+        backdrop-filter:blur(2px); display:flex; align-items:center; justify-content:center; padding:16px; }
+      .stm32-dbg-window { width:min(1440px,97vw); height:min(900px,93vh); display:flex; flex-direction:column;
+        background:Canvas; color:CanvasText; border:1px solid rgba(128,128,128,.32); border-radius:14px;
+        box-shadow:0 24px 72px rgba(0,0,0,.5); overflow:hidden; font-size:12px;
+        font-family:var(--dsw-font-ui, system-ui, -apple-system, "Segoe UI", sans-serif); }
+      .stm32-dbg-head { display:flex; align-items:center; gap:6px; padding:8px 12px;
+        border-bottom:1px solid rgba(128,128,128,.2); flex-wrap:wrap; flex:0 0 auto; }
+      .stm32-dbg-title { font-weight:600; font-size:12.5px; margin-right:2px; }
+      .stm32-dbg-stop { font-size:11px; opacity:.72; font-family:var(--dsw-font-mono, Consolas, monospace);
+        overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:460px; }
+      .stm32-dbg-x { margin-left:6px; border:0; background:transparent; color:inherit; font-size:18px;
+        line-height:1; width:28px; height:28px; border-radius:7px; cursor:pointer; opacity:.55; }
+      .stm32-dbg-x:hover { background:rgba(128,128,128,.15); opacity:1; }
+      .stm32-dbg-launch { position:fixed; right:18px; bottom:52px; z-index:900; padding:7px 14px;
+        border-radius:999px; border:1px solid #3b82f6; background:#3b82f6; color:#fff; cursor:pointer;
+        font:inherit; font-size:12px; box-shadow:0 6px 20px rgba(59,130,246,.4); }
+      .stm32-dbg-launch:hover { background:#2f6fdb; }
+      .stm32-dbg-body { flex:1; min-height:0; display:grid;
+        grid-template-columns:236px minmax(0,1fr) 336px; }
+      .stm32-dbg-col { min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
+      .stm32-dbg-col + .stm32-dbg-col { border-left:1px solid rgba(128,128,128,.2); }
+      .stm32-dbg-center { padding:6px 0 8px; display:flex; flex-direction:column; flex:1; min-height:0; }
+      .stm32-dbg-center .stm32-src-toolbar { padding:0 10px; margin-bottom:6px; }
+      .stm32-dbg-center .stm32-src-scroll { margin:0 10px; }
+      .stm32-dbg-center > .stm32-hint, .stm32-dbg-center > .stm32-empty { padding-left:10px; padding-right:10px; }
+      .stm32-dbg-right { overflow:hidden; display:flex; flex-direction:column; }
+      .stm32-dbg-right .stm32-card { border:0; border-radius:0; background:transparent; }
+      .stm32-dbg-right .stm32-card + .stm32-card { border-top:1px solid rgba(128,128,128,.2); }
+      .stm32-dbg-right .stm32-grid { grid-template-columns:1fr; gap:0; }
+      .stm32-dbg-right .stm32-scroll { max-height:none; }
+      @media (max-width: 980px) {
+        .stm32-dbg-body { grid-template-columns:180px minmax(0,1fr); }
+        .stm32-dbg-right { display:none; }
+      }
 
       /* ---- settings page ---- */
       .stm32-settings { width:100%; max-width:780px; box-sizing:border-box; padding:2px 2px 24px;
@@ -393,11 +517,7 @@ window.__ModuleLoader__.load({
           btn(flashRunning ? '下载中…' : '下载', () => run('flash'), { fixedWidth: true, disabled: flashRunning || buildRunning || !project?.artifact || active, title: '下载到芯片 (F8)' }),
           active
             ? btn('停止调试', () => run('debugStop'), { danger: true, title: '结束调试会话' })
-            : btn(debugStarting ? '启动中…' : '调试', () => run('debugStart'), { primary: true, fixedWidth: true, disabled: debugStarting, title: '启动调试并运行到 main' }),
-          active ? btn(running ? '暂停' : '继续', () => run('debug', { op: running ? 'pause' : 'continue', waitMs: 0 }), { title: '暂停 / 继续 (F5)' }) : null,
-          active ? btn('单步', () => run('debug', { op: 'stepOver' }), { title: '单步跳过 (F10)' }) : null,
-          active ? btn('步入', () => run('debug', { op: 'stepInto' }), { title: '单步进入 (F11)' }) : null,
-          active ? btn('复位', () => run('debug', { op: 'reset' }), { title: '复位并暂停' }) : null,
+            : btn(debugStarting ? '启动中…' : '调试', () => run('debugStart'), { primary: true, fixedWidth: true, disabled: debugStarting, title: '启动调试并打开调试窗口' }),
           h('span', { key: 'sp2', className: 'stm32-toolbar-busy', 'aria-hidden': 'true' }, busy > 0 ? '…' : ''),
         ]),
       ]);
@@ -406,11 +526,8 @@ window.__ModuleLoader__.load({
     function TabBar({ tab, setTab }) {
       const tabs = [
         ['console', '控制台'],
-        ['registers', '寄存器'],
+        ['source', '源码'],
         ['memory', '内存'],
-        ['breakpoints', '断点'],
-        ['stack', '调用栈'],
-        ['watch', '变量'],
         ['disasm', '反汇编'],
         ['serial', '串口'],
         ['rtt', 'RTT'],
@@ -431,8 +548,18 @@ window.__ModuleLoader__.load({
       const ref = useRef(null);
       const logs = state?.logs ?? [];
       const [clearing, setClearing] = useState(false);
+      const atBottom = useRef(true);
+      // Track whether the user is already parked at the bottom; only then do we
+      // auto-follow new lines. Scrolling up to read history must not be yanked
+      // back down by the next poll.
+      const onScroll = useCallback(() => {
+        const el = ref.current;
+        if (!el) return;
+        atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+      }, []);
       useEffect(() => {
-        if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+        const el = ref.current;
+        if (el && atBottom.current) el.scrollTop = el.scrollHeight;
       }, [logs.length]);
       const clear = useCallback(async () => {
         setClearing(true);
@@ -445,13 +572,13 @@ window.__ModuleLoader__.load({
         }
       }, [run]);
       const errors = state?.lastBuild?.errors ?? [];
-      return h('div', null, [
-        h('div', { className: 'stm32-row', style: { justifyContent: 'space-between', marginBottom: 6 }, key: 'head' }, [
+      return h('div', { className: 'stm32-console-pane' }, [
+        h('div', { className: 'stm32-console-head', key: 'head' }, [
           h('span', { className: 'stm32-muted' }, logs.length ? `${logs.length} 行日志` : '暂无日志'),
           h('button', { className: 'stm32-btn', onClick: clear, disabled: clearing || logs.length === 0 }, '清除日志'),
         ]),
         errors.length > 0
-          ? h('div', { className: 'stm32-card', style: { marginBottom: 8 }, key: 'errs' }, [
+          ? h('div', { className: 'stm32-card', style: { marginBottom: 8, flex: '0 0 auto' }, key: 'errs' }, [
             h('div', { className: 'stm32-card-head' }, [
               h('span', null, `编译错误 (${errors.length})`),
             ]),
@@ -461,8 +588,9 @@ window.__ModuleLoader__.load({
                 h('td', { style: { whiteSpace: 'normal' } }, e.message))))))
           ])
           : null,
-        h('pre', { className: 'stm32-console', ref, key: 'log' },
-          logs.length === 0 ? '等待操作…' : logs.map((l) => `[${new Date(l.time).toLocaleTimeString()}] ${l.text}`).join('\n')),
+        h('div', { className: 'stm32-console-scroll', ref, onScroll, key: 'scroll' },
+          h('pre', { className: 'stm32-console' },
+            logs.length === 0 ? '等待操作…' : logs.map((l) => `[${new Date(l.time).toLocaleTimeString()}] ${l.text}`).join('\n'))),
       ]);
     }
 
@@ -715,6 +843,371 @@ window.__ModuleLoader__.load({
       ]);
     }
 
+    // ------------------------------------------------------------ source
+
+    const normPath = (p) => String(p ?? '').replace(/\\/g, '/').toLowerCase();
+
+    // Group the flat project source list into {group, files[]} buckets, keeping
+    // the order the Keil project declares them in (uvprojx group order).
+    function buildGroups(sources) {
+      const order = [];
+      const map = new Map();
+      for (const s of sources) {
+        const g = s.group || '源文件';
+        if (!map.has(g)) { map.set(g, []); order.push(g); }
+        map.get(g).push(s);
+      }
+      return order.map((name) => ({ name, files: map.get(name) }));
+    }
+
+    function SourceTab({ state, run, disabled, selection, onAddWatch }) {
+      const sources = state?.project?.sources ?? [];
+      const [localSel, setLocalSel] = useState('');
+      // When the parent passes a selection object we become controlled, so the
+      // debug window's source tree can drive which file is shown.
+      const selected = selection ? (selection.path ?? '') : localSel;
+      const setSelected = selection ? selection.onPick : setLocalSel;
+      const [file, setFile] = useState(null);
+      const [bpts, setBpts] = useState([]);
+      const [err, setErr] = useState('');
+      const [loading, setLoading] = useState(false);
+      const [menu, setMenu] = useState(null);
+      const codeRef = useRef(null);
+
+      // Default to the file the debugger is stopped in; otherwise open main.c
+      // at main() like Keil does, and only fall back to the first source.
+      const stop = state?.debug?.stop ?? null;
+      useEffect(() => {
+        if (selected || sources.length === 0) return;
+        const stopMatch = stop && sources.find((s) => normPath(s.path).endsWith(normPath(stop.file)) || normPath(s.rel).endsWith(normPath(stop.file)));
+        const mainFile = sources.find((s) => /(^|[\\/])main\.c$/i.test(s.path) || /^main\.c$/i.test(s.name));
+        setSelected(stopMatch ? stopMatch.path : (mainFile ? mainFile.path : sources[0].path));
+      }, [sources, stop, selected]);
+
+      // Follow the debugger: when it stops somewhere new, jump to that file
+      // (but leave the user free to browse other files until the next stop).
+      const lastStopKey = useRef('');
+      useEffect(() => {
+        if (!stop?.file) return;
+        const key = `${normPath(stop.file)}:${stop.line ?? ''}`;
+        if (key === lastStopKey.current) return;
+        lastStopKey.current = key;
+        const hit = sources.find((s) => normPath(s.path).endsWith(normPath(stop.file)) || normPath(s.rel).endsWith(normPath(stop.file)));
+        if (hit) setSelected(hit.path);
+      }, [stop?.file, stop?.line, sources]);
+
+      // Load the chosen file's text.
+      useEffect(() => {
+        if (!selected) { setFile(null); return undefined; }
+        let alive = true;
+        setLoading(true);
+        api('source', { path: selected }, { method: 'GET' })
+          .then((json) => { if (!alive) return; if (json.ok) { setFile(json); setErr(''); } else setErr(json.error ?? '读取失败'); })
+          .catch((e) => { if (alive) setErr(String(e?.message ?? e)); })
+          .finally(() => { if (alive) setLoading(false); });
+        return () => { alive = false; };
+      }, [selected]);
+
+      const refreshBpts = useCallback(async () => {
+        if (!state?.debug?.active) { setBpts([]); return; }
+        try {
+          const json = await run('breakpointList');
+          setBpts(json.breakpoints ?? []);
+        } catch (e) {
+          setErr(String(e?.message ?? e));
+        }
+      }, [run, state?.debug?.active]);
+      useEffect(() => { refreshBpts(); }, [refreshBpts]);
+
+      const lines = (file?.text ?? '').split('\n');
+      const fileBpts = useMemo(() => {
+        const target = normPath(file?.path ?? selected);
+        const map = new Map();
+        for (const b of bpts) {
+          if (b.type && !/breakpoint/.test(b.type)) continue;
+          const bf = normPath(b.fullname || b.file || '');
+          if (!bf) continue;
+          if (bf === target || target.endsWith(bf) || bf.endsWith(target)) {
+            if (b.line) map.set(Number(b.line), b);
+          }
+        }
+        return map;
+      }, [bpts, file, selected]);
+      const stopLine = stop && file && normPath(stop.file) && normPath(file.path).endsWith(normPath(stop.file))
+        ? Number(stop.line) : 0;
+
+      // Scroll the current line into view when we land on it.
+      useEffect(() => {
+        if (!stopLine || !codeRef.current) return;
+        const el = codeRef.current.querySelector(`[data-line="${stopLine}"]`);
+        if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'center' });
+      }, [stopLine, file]);
+
+      const toggle = useCallback(async (line) => {
+        if (!state?.debug?.active) { setErr('请先启动调试会话，再设置断点'); return; }
+        if (!file) return;
+        const hit = fileBpts.get(line);
+        try {
+          if (hit) await run('breakpointRemove', { id: hit.number });
+          else {
+            // GDB expects forward slashes in `file:line` locations.
+            const loc = `${String(file.path).replace(/\\/g, '/')}:${line}`;
+            await run('breakpointAdd', { kind: 'code', location: loc });
+          }
+          setErr('');
+          refreshBpts();
+        } catch (e) {
+          setErr(String(e?.message ?? e));
+        }
+      }, [state?.debug?.active, file, fileBpts, run, refreshBpts]);
+
+      // Right-click on a selected snippet offers to add it to the watch panel,
+      // mirroring Keil's "Add {expr} to Watch Window".
+      const openMenu = useCallback((event) => {
+        event.preventDefault();
+        const sel = String((typeof window !== 'undefined' && window.getSelection) ? window.getSelection().toString() : '').trim();
+        setMenu({ x: event.clientX, y: event.clientY, expr: sel });
+      }, []);
+      const addWatch = useCallback(() => {
+        const expr = menu?.expr;
+        setMenu(null);
+        if (!expr) return;
+        if (typeof onAddWatch === 'function') onAddWatch(expr);
+        else setErr('当前视图不支持添加到监视窗口');
+      }, [menu, onAddWatch]);
+
+      const picker = h('select', {
+        className: 'stm32-input',
+        value: selected,
+        onChange: (e) => setSelected(e.target.value),
+      }, sources.map((s) => h('option', { key: s.path, value: s.path }, `${s.group ? `${s.group} / ` : ''}${s.name}`)));
+
+      return h('div', { className: 'stm32-src-pane' }, [
+        h('div', { className: 'stm32-src-toolbar', key: 'tb' }, [
+          h('span', { className: 'stm32-muted' }, '源文件'),
+          picker,
+          h('span', { key: 'sp', style: { flex: 1 } }),
+          state?.debug?.active
+            ? h('span', { className: 'stm32-hint' }, '点击行号左侧圆点设置断点；选中变量右键可加入监视')
+            : h('span', { className: 'stm32-hint stm32-badge-err' }, '调试未启动（可查看源码，断点需先启动调试）'),
+        ]),
+        err ? h('div', { className: 'stm32-hint stm32-badge-err', key: 'err' }, err) : null,
+        !file
+          ? h('div', { className: 'stm32-empty' }, loading ? '读取中…' : (sources.length ? '选择源文件' : '当前工程没有 C/汇编源文件'))
+          : h('div', { className: 'stm32-src-scroll', ref: codeRef, key: 'code' },
+            h('div', { className: 'stm32-src-table' }, lines.map((text, i) => {
+              const no = i + 1;
+              const bp = fileBpts.get(no);
+              const isStop = no === stopLine;
+              return h('div', {
+                className: `stm32-src-line${isStop ? ' active' : ''}`, key: no, 'data-line': no,
+                onContextMenu: openMenu,
+              }, [
+                h('button', {
+                  className: `stm32-src-bp${bp ? ' has-bp' : ''}`,
+                  title: bp ? `删除断点 #${bp.number}` : (state?.debug?.active ? `在第 ${no} 行设置断点` : '调试未启动'),
+                  onClick: () => toggle(no),
+                }, '●'),
+                h('span', { className: 'stm32-src-gutter' }, String(no)),
+                h('span', { className: 'stm32-src-code' }, [
+                  isStop ? h('span', { className: 'stm32-src-marker', key: 'm' }, '▶ ') : null,
+                  text || ' ',
+                ]),
+              ]);
+            }))),
+        menu ? h('div', {
+          className: 'stm32-ctxmenu', key: 'ctx',
+          style: { left: menu.x, top: menu.y },
+          onMouseDown: (e) => e.stopPropagation(),
+        }, [
+          h('div', {
+            className: `stm32-ctxitem${menu.expr ? '' : ' disabled'}`, key: 'w',
+            onClick: menu.expr ? addWatch : undefined,
+          }, menu.expr ? `添加 “${menu.expr}” 到监视` : '请先选中一个变量'),
+          h('div', { className: 'stm32-ctxitem', key: 'c', onClick: () => setMenu(null) }, '取消'),
+        ]) : null,
+      ]);
+    }
+
+    // ------------------------------------------------------ source tree
+
+    // Left pane of the debug window: every project source grouped like Keil's
+    // Project window, with a red dot on files that carry a breakpoint.
+    function SourceTree({ sources, selected, onSelect, bpts }) {
+      const groups = useMemo(() => buildGroups(sources), [sources]);
+      // Groups start collapsed, like Keil's Project window; the group holding the
+      // file that is currently open (or stopped at) is expanded automatically.
+      const [collapsed, setCollapsed] = useState({});
+      const toggleGroup = useCallback((name) => {
+        setCollapsed((prev) => ({ ...prev, [name]: !prev[name] }));
+      }, []);
+      const bpFiles = useMemo(() => {
+        const set = new Set();
+        for (const b of bpts) {
+          if (b.type && !/breakpoint/.test(b.type)) continue;
+          const bf = normPath(b.fullname || b.file || '');
+          if (bf) set.add(bf.split('/').pop());
+        }
+        return set;
+      }, [bpts]);
+      const selName = normPath(selected || '').split('/').pop();
+      return h('div', { className: 'stm32-tree' }, [
+        h('div', { className: 'stm32-tree-head', key: 'h' }, [
+          h('span', null, '源文件'),
+          h('span', { className: 'stm32-muted', style: { marginLeft: 'auto', fontWeight: 400 } }, String(sources.length)),
+        ]),
+        h('div', { className: 'stm32-tree-scroll', key: 's' }, groups.length === 0
+          ? h('div', { className: 'stm32-empty' }, '当前工程没有源文件')
+          : groups.map((g) => {
+            // A group is open when the user opened it, or when it holds the
+            // currently selected file (so the tree never hides the open file).
+            const holdsSel = g.files.some((f) => normPath(f.path) === normPath(selected || ''));
+            const isOpen = collapsed[g.name] ? false : (collapsed[g.name] === false ? true : holdsSel);
+            return [
+              h('div', {
+                className: 'stm32-tree-group', key: `g:${g.name}`, title: g.name,
+                onClick: () => toggleGroup(g.name),
+              }, [
+                h('span', { className: 'stm32-tree-caret', key: 'c' }, isOpen ? '▾' : '▸'),
+                h('span', { key: 'n', style: { overflow: 'hidden', textOverflow: 'ellipsis' } }, g.name),
+                h('span', { className: 'stm32-tree-count', key: 'k' }, String(g.files.length)),
+              ]),
+              ...(isOpen ? g.files.map((f) => h('div', {
+                key: f.path,
+                className: `stm32-tree-item${selected === f.path ? ' active' : ''}${bpFiles.has(normPath(f.path).split('/').pop()) ? ' has-bp' : ''}`,
+                title: f.path,
+                onClick: () => onSelect(f.path),
+              }, h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis' } }, f.name))) : []),
+            ];
+          })),
+      ]);
+    }
+
+    // ------------------------------------------------------ debug window
+
+    // Keil-style floating debugger: source tree | source | registers & variables.
+    function DebugWindow({ state, run }) {
+      const [open, setOpen] = useState(false);
+      const debug = state?.debug ?? {};
+      const active = Boolean(debug.active);
+      const running = Boolean(debug.running);
+      const sources = state?.project?.sources ?? [];
+      const stop = debug.stop ?? null;
+      const [bpts, setBpts] = useState([]);
+      const [selPath, setSelPath] = useState('');
+      const onPick = useCallback((p) => setSelPath(p), []);
+      // Shared watch list so the source view can push a right-clicked symbol
+      // straight into the right-hand "变量" pane, like Keil's Watch window.
+      const [watchList, setWatchList] = useState([]);
+      const addWatch = useCallback((expr) => {
+        const v = String(expr || '').trim();
+        if (!v) return;
+        setWatchList((prev) => (prev.includes(v) ? prev : [...prev, v]));
+        setRTab('watch');
+      }, []);
+      // Right column tabs, ordered the way Keil's debug view presents them.
+      const [rTab, setRTab] = useState('locals');
+
+      // Default the center pane to main.c (and the stop file once one exists).
+      useEffect(() => {
+        if (selPath) return;
+        if (!sources.length) return;
+        const target = stop?.file
+          ? sources.find((s) => normPath(s.path).endsWith(normPath(stop.file)))
+          : null;
+        const mainFile = sources.find((s) => /(^|[\\/])main\.c$/i.test(s.path));
+        const pick = target || mainFile || sources[0];
+        if (pick) setSelPath(pick.path);
+      }, [sources, stop?.file, selPath]);
+
+      const refreshBpts = useCallback(async () => {
+        if (!active) { setBpts([]); return; }
+        try {
+          const json = await run('breakpointList');
+          setBpts(json.breakpoints ?? []);
+        } catch { /* 调试可能刚好结束 */ }
+      }, [run, active]);
+      useEffect(() => { if (open) refreshBpts(); }, [open, refreshBpts]);
+
+      // Pop the window open automatically the moment a debug session starts.
+      const wasActive = useRef(false);
+      useEffect(() => {
+        if (active && !wasActive.current) setOpen(true);
+        if (!active) setOpen(false);
+        wasActive.current = active;
+      }, [active]);
+
+      if (!active) return null;
+
+      const stepBtn = (label, op, title) => h('button', {
+        className: 'stm32-btn', title, disabled: running,
+        onClick: () => run('debug', { op }),
+      }, label);
+
+      const head = h('div', { className: 'stm32-dbg-head', key: 'head' }, [
+        h('span', { className: 'stm32-dbg-title' }, '调试'),
+        h('button', {
+          className: `stm32-btn${running ? '' : ' primary'}`, title: '继续 (F5)',
+          onClick: () => run('debug', { op: running ? 'pause' : 'continue', waitMs: 0 }),
+        }, running ? '暂停' : '继续'),
+        stepBtn('单步', 'stepOver', '单步跳过 (F10)'),
+        stepBtn('步入', 'stepInto', '单步进入 (F11)'),
+        stepBtn('步出', 'stepOut', '跳出当前函数'),
+        stepBtn('复位', 'reset', '复位并暂停'),
+        stop ? h('span', { className: 'stm32-dbg-stop', title: formatStop(stop) }, formatStop(stop)) : null,
+        h('span', { style: { flex: 1 } }),
+        h('button', { className: 'stm32-btn danger', title: '结束调试', onClick: () => run('debugStop') }, '停止调试'),
+        h('button', {
+          className: 'stm32-dbg-x', type: 'button', title: '收起调试窗口',
+          onClick: () => setOpen(false),
+        }, '×'),
+      ]);
+
+      const rightTabs = [
+        ['locals', '局部变量'],
+        ['stack', '调用栈'],
+        ['registers', '寄存器'],
+        ['watch', `变量${watchList.length ? ` (${watchList.length})` : ''}`],
+      ];
+      const rBody = rTab === 'locals'
+        ? h(LocalsTab, { key: 'locals', state, run, disabled: false })
+        : rTab === 'stack'
+          ? h(StackTab, { key: 'stack', state, run, disabled: false })
+          : rTab === 'registers'
+            ? h(RegistersTab, { key: 'reg', state, run, disabled: false })
+            : h(WatchTab, { key: 'watch', state, run, disabled: false, watch: { list: watchList, setList: setWatchList } });
+
+      const body = open ? h('div', { className: 'stm32-dbg-body', key: 'body' }, [
+        h('div', { className: 'stm32-dbg-col', key: 'l' }, h(SourceTree, {
+          sources, selected: selPath, bpts, onSelect: onPick,
+        })),
+        h('div', { className: 'stm32-dbg-col stm32-dbg-center', key: 'c' }, h(SourceTab, {
+          state, run, disabled: false,
+          selection: { path: selPath, onPick },
+          onAddWatch: addWatch,
+        })),
+        h('div', { className: 'stm32-dbg-col stm32-dbg-right', key: 'r' }, [
+          h('div', { className: 'stm32-dbg-rtabs', key: 't' }, rightTabs.map(([id, label]) => h('button', {
+            key: id, className: `stm32-dbg-rtab${rTab === id ? ' active' : ''}`,
+            onClick: () => setRTab(id),
+          }, label))),
+          h('div', { className: 'stm32-dbg-rbody', key: 'b' }, rBody),
+        ]),
+      ]) : null;
+
+      if (!open) {
+        // Collapsed: a small floating launcher so the panel itself stays usable.
+        return h('button', {
+          className: 'stm32-dbg-launch',
+          title: '打开 Keil 式调试窗口（源码 / 断点 / 寄存器 / 变量）',
+          onClick: () => setOpen(true),
+        }, ['🔍 ', running ? '目标运行中…' : '调试窗口']);
+      }
+
+      return h('div', { className: 'stm32-dbg-mask', onMouseDown: (e) => { if (e.target === e.currentTarget) setOpen(false); } },
+        h('div', { className: 'stm32-dbg-window' }, [head, body]));
+    }
+
     // ------------------------------------------------------------ stack
 
     function StackTab({ state, run, disabled }) {
@@ -732,37 +1225,63 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         if (state?.debug?.active && !state?.debug?.running) refresh();
       }, [state?.debug?.active, state?.debug?.running, state?.debug?.stop?.addr]);
-      return h('div', { className: 'stm32-grid' }, [
-        h('div', { className: 'stm32-card', key: 'frames' }, [
-          h('div', { className: 'stm32-card-head' }, [
-            h('span', null, '调用栈'),
-            h('button', { className: 'stm32-btn', onClick: refresh, disabled }, '刷新'),
-          ]),
-          err ? h('div', { className: 'stm32-empty' }, err) : null,
-          !data ? h('div', { className: 'stm32-empty' }, disabled ? '调试未启动' : '点击刷新') : h('div', null,
-            (data.frames ?? []).map((f) => h('div', { key: f.level, className: 'stm32-row', style: { padding: '3px 8px', margin: 0 } }, [
-              h('span', { className: 'stm32-muted', style: { width: 24 } }, `#${f.level}`),
-              h('span', { style: { fontFamily: 'var(--dsw-font-mono, Consolas, monospace)' } }, f.func ? `${f.func}()` : '??'),
-              h('span', { className: 'stm32-muted' }, `${f.file}${f.line ? `:${f.line}` : ''}`),
+      return h('div', { className: 'stm32-card' }, [
+        h('div', { className: 'stm32-card-head' }, [
+          h('span', null, '调用栈'),
+          h('button', { className: 'stm32-btn', onClick: refresh, disabled }, '刷新'),
+        ]),
+        err ? h('div', { className: 'stm32-empty' }, err) : null,
+        !data ? h('div', { className: 'stm32-empty' }, disabled ? '调试未启动' : '点击刷新') : h('div', null,
+          (data.frames ?? []).map((f) => h('div', { key: f.level, className: 'stm32-row', style: { padding: '3px 8px', margin: 0 } }, [
+            h('span', { className: 'stm32-muted', style: { width: 24 } }, `#${f.level}`),
+            h('span', { style: { fontFamily: 'var(--dsw-font-mono, Consolas, monospace)' } }, f.func ? `${f.func}()` : '??'),
+            h('span', { className: 'stm32-muted' }, `${f.file}${f.line ? `:${f.line}` : ''}`),
+          ]))),
+      ]);
+    }
+
+    // Keil's "Locals" pane: local variables + parameters of the selected frame.
+    function LocalsTab({ state, run, disabled }) {
+      const [data, setData] = useState(null);
+      const [err, setErr] = useState('');
+      const refresh = useCallback(async () => {
+        try {
+          const json = await run('stack', { depth: 1 });
+          setData(json);
+          setErr('');
+        } catch (error) {
+          setErr(String(error?.message ?? error));
+        }
+      }, [run]);
+      useEffect(() => {
+        if (state?.debug?.active && !state?.debug?.running) refresh();
+      }, [state?.debug?.active, state?.debug?.running, state?.debug?.stop?.addr]);
+      const vars = data?.variables ?? [];
+      return h('div', { className: 'stm32-card' }, [
+        h('div', { className: 'stm32-card-head' }, [
+          h('span', null, `局部变量 / 参数 (${vars.length})`),
+          h('button', { className: 'stm32-btn', onClick: refresh, disabled }, '刷新'),
+        ]),
+        err ? h('div', { className: 'stm32-empty' }, err) : null,
+        !vars.length
+          ? h('div', { className: 'stm32-empty' }, disabled ? '调试未启动' : '暂无局部变量')
+          : h('table', { className: 'stm32-table stm32-mono' }, [
+            h('thead', null, h('tr', null, [h('th', null, '名称'), h('th', null, '值'), h('th', null, '类型')])),
+            h('tbody', null, vars.map((v, i) => h('tr', { key: i }, [
+              h('td', null, `${v.arg ? '[参数] ' : ''}${v.name}`),
+              h('td', null, v.value),
+              h('td', { className: 'stm32-muted' }, v.type || ''),
             ]))),
-        ]),
-        h('div', { className: 'stm32-card', key: 'vars' }, [
-          h('div', { className: 'stm32-card-head' }, h('span', null, '局部变量 / 参数')),
-          !data?.variables?.length
-            ? h('div', { className: 'stm32-empty' }, '暂无变量')
-            : h('table', { className: 'stm32-table' }, h('tbody', null,
-              data.variables.map((v, i) => h('tr', { key: i }, [
-                h('td', null, `${v.arg ? '[参数] ' : ''}${v.name}`),
-                h('td', null, v.value),
-              ])))),
-        ]),
+          ]),
       ]);
     }
 
     // --------------------------------------------------------- watch
 
-    function WatchTab({ state, run, disabled }) {
-      const [expressions, setExpressions] = useState(['']);
+    function WatchTab({ state, run, disabled, watch }) {
+      const [ownExpressions, setOwnExpressions] = useState([]);
+      const expressions = watch ? watch.list : ownExpressions;
+      const setExpressions = watch ? watch.setList : setOwnExpressions;
       const [input, setInput] = useState('');
       const [values, setValues] = useState({});
       const [err, setErr] = useState('');
@@ -982,27 +1501,26 @@ window.__ModuleLoader__.load({
 
       let body;
       if (tab === 'console') body = h(ConsoleTab, { state, run });
-      else if (tab === 'registers') body = h(RegistersTab, { state, run, disabled: !active });
+      else if (tab === 'source') body = h(SourceTab, { state, run, disabled: !active });
       else if (tab === 'memory') body = h(MemoryTab, { state, run, disabled: !active });
-      else if (tab === 'breakpoints') body = h(BreakpointsTab, { state, run, disabled: !active });
-      else if (tab === 'watch') body = h(WatchTab, { state, run, disabled: !active });
       else if (tab === 'disasm') body = h(DisasmTab, { state, run, disabled: !active });
       else if (tab === 'serial') body = h(SerialTab, { state, run });
       else if (tab === 'rtt') body = h(RttTab, { state, run, disabled: !active });
       else if (tab === 'symbols') body = h(SymbolTab, { state, run });
       else if (tab === 'pins') body = h(PinsTab, { state, run });
       else if (tab === 'settings') body = h(SettingsPage, { embedded: true });
-      else body = h(StackTab, { state, run, disabled: !active });
+      else body = h(ConsoleTab, { state, run });
 
       return h('div', { className: 'stm32-root' }, [
         h(Toolbar, { key: 'tb', state, run: doRun, busy, tab, setTab, onSwitchProject: () => setSwitchProject(true) }),
         h(TabBar, { key: 'tabs', tab, setTab }),
-        h('div', { className: 'stm32-body', key: 'body' }, [
+        h('div', { className: `stm32-body${tab === 'console' || tab === 'source' ? ' stm32-body-fill' : ''}`, key: 'body' }, [
           project && project.errors?.length
             ? h('div', { className: 'stm32-hint stm32-badge-err', key: 'perr', style: { marginBottom: 6 } }, project.errors.join(' · '))
             : null,
           body,
         ]),
+        h(DebugWindow, { key: 'dbg', state, run: doRun }),
         switchProject ? h(PathPicker, {
           key: 'switcher',
           initial: project?.root || '',
@@ -1653,6 +2171,7 @@ window.__ModuleLoader__.load({
           ]),
         ], 'debug'),
         section('下载', [
+          field('binAddress', '下载地址', '留空自动（按工程内存图）', '仅 .bin 裸固件需要；留空则按工程 .uvprojx 里的 ROM 起始地址自动推断（例如 STM32F4 为 0x08000000）。.hex/.elf 自带地址，忽略此项。'),
           selectRow('flashErase', '擦除方式', [
             { value: 'none', label: '按扇区擦除（默认）' },
             { value: 'mass', label: '整片擦除 (mass erase)' },
@@ -1788,7 +2307,7 @@ window.__ModuleLoader__.load({
       inject: ['slots', 'locale'],
       apply,
       // Exposed for the render smoke tests; not part of the plugin API.
-      __components: { Workbench, SettingsPage, PathPicker, Toolbar },
+      __components: { Workbench, SettingsPage, PathPicker, Toolbar, SourceTab, ConsoleTab, DebugWindow, SourceTree },
     };
     return module.exports;
   },

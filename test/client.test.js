@@ -110,6 +110,16 @@ test('toolbar offers probe and erase quick selectors', () => {
   assert.match(html, /整片擦除/);
 });
 
+
+function renderWithClasses(node) {
+  if (node == null || node === false || node === true) return '';
+  if (Array.isArray(node)) return node.map(renderWithClasses).join('');
+  if (typeof node === 'string' || typeof node === 'number') return String(node);
+  if (typeof node.type === 'function') return renderWithClasses(node.type({ ...node.props, children: node.children }));
+  const cls = node.props && node.props.className ? ` class="${node.props.className}"` : '';
+  return `<div${cls}>` + node.children.map(renderWithClasses).join('') + '</div>';
+}
+
 test('path picker renders Explorer-style shell', () => {
   assert.ok(clientModule?.__components?.PathPicker, 'PathPicker should be exposed');
   // Hooks order: cwd, view, error, loading, selected, filter.
@@ -139,4 +149,77 @@ test('path picker renders Explorer-style shell', () => {
   assert.match(html, /个文件夹/);
   assert.match(html, /选择此目录/);
   assert.match(html, /取消/);
+});
+
+test('debug window hides when idle and shows a launcher while debugging', () => {
+  const { DebugWindow } = clientModule.__components;
+  assert.ok(DebugWindow, 'DebugWindow should be exposed');
+  hooks = []; hookIndex = 0;
+  assert.equal(renderNode(DebugWindow({ state: { debug: { active: false } }, run() {} })), '');
+  hooks = [false]; hookIndex = 0;
+  const html = renderNode(DebugWindow({
+    state: { debug: { active: true, running: false }, project: { sources: [] } },
+    run() {},
+  }));
+  assert.match(html, /调试窗口/);
+});
+
+test('debug window opens into a three-pane Keil-style layout', () => {
+  const { DebugWindow } = clientModule.__components;
+  hooks = [true, [], '']; hookIndex = 0;
+  const html = renderWithClasses(DebugWindow({
+    state: {
+      debug: { active: true, running: false, stop: { reason: 'breakpoint', func: 'main', file: 'Src/main.c', line: 861 } },
+      project: { sources: [{ name: 'main.c', path: 'D:/p/Src/main.c', group: 'Application/User' }] },
+    },
+    run() {},
+  }));
+  assert.match(html, /stm32-dbg-window/);
+  assert.match(html, /stm32-dbg-body/);
+  assert.match(html, /继续/);
+  assert.match(html, /单步/);
+  assert.match(html, /步入/);
+  assert.match(html, /停止调试/);
+});
+
+test('source tree groups project files, collapses groups and flags breakpoint files', () => {
+  const { SourceTree } = clientModule.__components;
+  assert.ok(SourceTree, 'SourceTree should be exposed');
+  const props = {
+    sources: [
+      { name: 'main.c', path: 'D:\\p\\Src\\main.c', group: 'Application/User' },
+      { name: 'modbus.c', path: 'D:\\p\\User\\modbus.c', group: 'func' },
+    ],
+    selected: 'D:\\p\\Src\\main.c',
+    bpts: [{ type: 'breakpoint', fullname: 'D:\\p\\User\\modbus.c', line: 3 }],
+    onSelect() {},
+  };
+
+  // Default: every group is collapsed except the one holding the open file, so
+  // Keil-style long file lists stay shut until the user drills in.
+  hooks = []; hookIndex = 0;
+  const collapsed = renderWithClasses(SourceTree(props));
+  assert.match(collapsed, /Application\/User/);
+  assert.match(collapsed, /main\.c/);
+  assert.match(collapsed, /stm32-tree-caret">▾/); // open group
+  assert.match(collapsed, /stm32-tree-caret">▸/); // collapsed group
+  assert.doesNotMatch(collapsed, /modbus\.c/);
+
+  // Expanded "func" group shows its file, with the breakpoint marker.
+  hooks = [{ func: false }]; hookIndex = 0;
+  const expanded = renderWithClasses(SourceTree(props));
+  assert.match(expanded, /modbus\.c/);
+  assert.match(expanded, /has-bp/);
+});
+
+test('source tab accepts an external selection from the debug tree', () => {
+  const { SourceTab } = clientModule.__components;
+  hooks = []; hookIndex = 0;
+  const html = renderNode(SourceTab({
+    state: { debug: { active: true }, project: { sources: [{ name: 'main.c', path: 'D:/p/main.c', group: 'User' }] } },
+    run() {},
+    disabled: false,
+    selection: { path: 'D:/p/main.c', onPick() {} },
+  }));
+  assert.match(html, /User \/ main\.c/);
 });
