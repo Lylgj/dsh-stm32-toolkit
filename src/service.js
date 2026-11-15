@@ -28,6 +28,34 @@ import { detectToolchain, findGccTools, findUv4 } from './engine/toolchain.js';
 
 export const CONFIG_VERSION = 1;
 
+// GDB emits `??` for an address it cannot resolve to a symbol. Never surface that
+// placeholder to the user — render a plain, readable description instead.
+export function describeStopLog(stop) {
+  if (!stop) return '暂停';
+  const func = stop.func && stop.func !== '??' && stop.func !== '?' ? stop.func : '';
+  const file = stop.file && stop.file !== '??' ? stop.file : '';
+  const REASONS = {
+    'signal-received': '收到暂停信号',
+    'breakpoint-hit': '命中断点',
+    'watchpoint-trigger': '命中数据监视点',
+    'read-watchpoint-trigger': '命中读监视点',
+    'access-watchpoint-trigger': '命中读写监视点',
+    'exited-normally': '程序正常退出',
+    'exited': '程序已退出',
+    'end-stepping-range': '单步结束',
+    'function-finished': '函数返回',
+    'location-reached': '到达指定位置',
+  };
+  const reason = REASONS[stop.reason] || String(stop.reason || '');
+  if (func || file) {
+    const at = func ? `${func}()` : '';
+    const where = file ? `${file}${stop.line ? `:${stop.line}` : ''}` : '';
+    return `暂停: ${[reason, at && `@ ${at}`, where && `(${where})`].filter(Boolean).join(' ')}`;
+  }
+  if (stop.addr) return `暂停: ${reason || '已停止'} (地址 ${stop.addr})`;
+  return `暂停: ${reason || '未知位置'}`;
+}
+
 export function dshHome() {
   return process.env.DSH_HOME || join(homedir(), '.dsh');
 }
@@ -65,7 +93,7 @@ const DEFAULTS = {
   telnetPort: 4444,
   runToMain: true,
   openocdCommands: [],
-  binAddress: '0x08000000',
+  binAddress: '',
   flashErase: 'none',
   flashVerify: true,
   flashReset: true,
@@ -117,9 +145,7 @@ export class Stm32Service extends EventEmitter {
     this.symbolsAt = 0;
     this.installState = { running: false, component: '', percent: 0, message: '' };
     this.buildCounter = 0;
-    this.debug.on('stopped', (stop) => this.log(
-      `暂停: ${stop.reason}${stop.func ? ` @ ${stop.func}` : ''}${stop.file ? ` (${stop.file}:${stop.line})` : ''}`,
-    ));
+    this.debug.on('stopped', (stop) => this.log(describeStopLog(stop)));
     this.debug.on('target', (text) => this.log(text.trimEnd(), 'target'));
     this.debug.on('exit', () => this.emit('debug-exit'));
   }
@@ -252,6 +278,55 @@ export class Stm32Service extends EventEmitter {
     }
   }
 
+  /**
+   * Best-guess load address for a raw .bin: the project's REAL ROM start —
+   * the scatter file's load region when the project has one (this is where an
+   * IAP application actually lives, e.g. 0x08010000), otherwise the chip's
+   * physical IROM start from the .uvprojx <Cpu> line. Falls back to the classic
+   * 0x08000000 when nothing is available.
+   */
+  suggestedBinAddress() {
+    const uv = this.project?.uvprojx;
+    const regions = uv?.memory?.rom ?? uv?.cpu?.rom ?? [];
+    const start = regions.find((region) => Number.isFinite(region?.start))?.start;
+    if (Number.isFinite(start)) return `0x${Number(start).toString(16).toUpperCase().padStart(8, '0')}`;
+    return '0x08000000';
+  }
+
+  /** Source files of the current project (for the source/breakpoint viewer). */
+  sourceList() {
+    const files = this.project?.uvprojx?.files ?? [];
+    return files
+      .filter((file) => ['c', 'cpp', 'asm'].includes(String(file.kind)))
+      .map((file) => ({ name: file.name, path: file.abs, rel: file.path, group: file.group, kind: file.kind }))
+      .sort((a, b) => `${a.group}/${a.name}`.localeCompare(`${b.group}/${b.name}`, undefined, { sensitivity: 'base' }));
+  }
+
+  /**
+   * Read one source file as text. Keil projects are usually GBK-encoded, so a
+   * straight utf8 read would mangle the comments; fall back to GBK when the
+   * utf8 decode produces replacement characters.
+   */
+  readSource(file) {
+    const root = this.project?.root ?? this.config.projectDir;
+    const target = resolvePathLike(String(file ?? ''));
+    if (!root) throw new Error('当前没有打开的工程');
+    const rootAbs = resolve(root);
+    if (!target.toLowerCase().startsWith(rootAbs.toLowerCase())) throw new Error('只能打开工程目录内的源文件');
+    const rel = target.slice(rootAbs.length);
+    if (!fileExists(target)) throw new Error(`文件不存在：${rel}`);
+    const buffer = readFileSync(target);
+    let text = buffer.toString('utf8');
+    if (text.includes('\uFFFD')) {
+      try {
+        text = new TextDecoder('gbk').decode(buffer);
+      } catch {
+        /* keep the utf8 text */
+      }
+    }
+    return { path: target, rel, text };
+  }
+
   svd() {
     const path = this.project?.svd?.path || this.config.svdPath;
     if (!path || !fileExists(path)) return null;
@@ -353,7 +428,11 @@ export class Stm32Service extends EventEmitter {
     const openocd = this.config.openocdPath || toolchain.openocd.path;
     const backend = resolveBackend(this.config, toolchain);
     const ext = artifact.toLowerCase().split('.').pop();
-    const address = options.address || (ext === 'bin' ? this.config.binAddress : '');
+    // Only raw .bin needs an explicit load address. Prefer the caller's value,
+    // then the configured one, then the project's REAL load address (scatter
+    // file when present, otherwise the .uvprojx Cpu line) so the default is not
+    // blindly 0x08000000 — an IAP app usually lives at 0x08010000 or later.
+    const address = options.address || (ext === 'bin' ? (this.config.binAddress || this.suggestedBinAddress()) : '');
     const erase = options.erase ?? this.config.flashErase;
     const verify = options.verify ?? this.config.flashVerify;
     const reset = options.reset ?? this.config.flashReset;
@@ -735,6 +814,10 @@ export class Stm32Service extends EventEmitter {
       interfaceCfg: options.interfaceCfg || project.interfaceCfg || this.config.interfaceCfg,
       projectDir: project.root,
       svd: this.svd(),
+      // The parsed memory map tells the debugger where the application image
+      // really lives (e.g. 0x08010000 on IAP boards) so it can jump past the
+      // bootloader when the bootloader fails to do so itself.
+      memory: project.uvprojx?.memory,
     };
     this.debug.config = config;
     this.log(`启动调试(${backend}): ${elf}`);
@@ -809,6 +892,7 @@ export class Stm32Service extends EventEmitter {
         flashErase: this.config.flashErase,
         flashVerify: this.config.flashVerify,
         flashReset: this.config.flashReset,
+        binAddress: this.config.binAddress,
         rttPort: this.config.rttPort,
         rttChannel: this.config.rttChannel,
         core: this.config.core,
@@ -841,6 +925,9 @@ export class Stm32Service extends EventEmitter {
           svdSource: project.svd?.source ?? '',
           errors: project.errors ?? [],
           buildDir: project.buildDir,
+          binAddress: this.suggestedBinAddress(),
+          binAddressSource: project.uvprojx?.memory?.source ?? '',
+          sources: this.sourceList(),
         }
         : null,
       debug: this.debug.state(),

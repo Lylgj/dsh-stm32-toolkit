@@ -5,8 +5,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 
-const KEIL_PROJECT_DIR = 'D:\\lgj\\mcu_acc_app';
-const REAL_SVD = 'C:\\Users\\Administrator\\.dsh\\stm32\\svd\\STM32F407.svd';
+// Sample Keil project used by the integration tests. Override with
+// DSH_STM32_TEST_PROJECT when the checkout lives somewhere else; the tests that
+// need it are skipped when none of these paths exist.
+const KEIL_PROJECT_CANDIDATES = [
+  process.env.DSH_STM32_TEST_PROJECT,
+  'D:\\lgj\\work\\LA_NEW\\mcu_acc_app',
+  'D:\\lgj\\mcu_acc_app',
+].filter(Boolean);
+const KEIL_PROJECT_DIR = KEIL_PROJECT_CANDIDATES.find((dir) => existsSync(dir)) ?? KEIL_PROJECT_CANDIDATES[0];
+const REAL_SVD = [
+  process.env.DSH_STM32_TEST_SVD,
+  'C:\\Users\\i\\.dsh\\stm32\\svd\\STM32F407.svd',
+  'C:\\Users\\Administrator\\.dsh\\stm32\\svd\\STM32F407.svd',
+].filter(Boolean).find((file) => existsSync(file))
+  ?? 'C:\\Users\\Administrator\\.dsh\\stm32\\svd\\STM32F407.svd';
 
 const TEMP_HOME = mkdtempSync(join(tmpdir(), 'dsh-stm32-test-'));
 process.env.DSH_HOME = TEMP_HOME;
@@ -197,6 +210,58 @@ test('HTTP route returns 405 for unsupported methods', async () => {
   const res = mockResponse();
   await handler({ method: 'DELETE', url: '/api/stm32/state', headers: {} }, res);
   assert.equal(res.status, 405);
+});
+
+test('sources/source routes serve project files and guard the project root', { skip: !existsSync(KEIL_PROJECT_DIR) }, async () => {
+  const { ctx, registered } = makeCtx();
+  apply(ctx);
+  const handler = registered.routes[0].handler;
+
+  await handler(jsonRequest('POST', '/api/stm32/action', {
+    action: 'config',
+    patch: { projectDir: KEIL_PROJECT_DIR },
+  }), mockResponse());
+
+  const listRes = mockResponse();
+  await handler(jsonRequest('GET', '/api/stm32/sources'), listRes);
+  assert.equal(listRes.status, 200);
+  const listJson = JSON.parse(listRes.body);
+  assert.equal(listJson.ok, true);
+  assert.ok(listJson.files.length > 50, `expected many source files, got ${listJson.files.length}`);
+  const main = listJson.files.find((file) => file.name === 'main.c');
+  assert.ok(main, 'main.c should be listed');
+  assert.ok(main.path.startsWith(KEIL_PROJECT_DIR));
+
+  const srcRes = mockResponse();
+  await handler(jsonRequest('GET', `/api/stm32/source?path=${encodeURIComponent(main.path)}`), srcRes);
+  assert.equal(srcRes.status, 200);
+  const srcJson = JSON.parse(srcRes.body);
+  assert.equal(srcJson.ok, true);
+  assert.match(srcJson.text, /main/i);
+  assert.ok(!srcJson.text.includes('\uFFFD'), 'GBK sources must decode cleanly');
+
+  const badRes = mockResponse();
+  await handler(jsonRequest('GET', '/api/stm32/source?path=C%3A%5CWindows%5Cwin.ini'), badRes);
+  const badJson = JSON.parse(badRes.body);
+  assert.equal(badJson.ok, false);
+  assert.match(badJson.error, /工程目录/);
+
+  const missingRes = mockResponse();
+  await handler(jsonRequest('GET', '/api/stm32/source'), missingRes);
+  assert.equal(missingRes.status, 400);
+});
+
+test('suggested bin address follows the project memory map', { skip: !existsSync(KEIL_PROJECT_DIR) }, async () => {
+  const service = new Stm32Service();
+  await service.inspect(KEIL_PROJECT_DIR, true);
+  // The real project boots from an IAP bootloader: its scatter file loads at
+  // 0x08010000, NOT the chip's physical 0x08000000.
+  assert.equal(service.suggestedBinAddress(), '0x08010000');
+  assert.equal(service.project.uvprojx.memory.source, 'scatter');
+  assert.equal(service.project.uvprojx.memory.rom[0].start, 0x08010000);
+  service.project = null;
+  // Falls back to the classic STM32 address when no memory map is available.
+  assert.equal(service.suggestedBinAddress(), '0x08000000');
 });
 
 test('tools execute against the real project', { skip: !existsSync(KEIL_PROJECT_DIR) }, async () => {

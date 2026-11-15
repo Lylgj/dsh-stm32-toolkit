@@ -89,6 +89,15 @@ async function handleRequest(req, res, service) {
     if (method === 'GET' && route === 'fs') {
       return sendJson(res, 200, listDirectory(url.searchParams.get('path'), url.searchParams.get('ext') ?? ''));
     }
+    if (method === 'GET' && route === 'sources') {
+      const project = await service.inspect(service.config.projectDir || process.cwd());
+      return sendJson(res, 200, { ok: true, root: project.root, files: service.sourceList() });
+    }
+    if (method === 'GET' && route === 'source') {
+      const file = url.searchParams.get('path');
+      if (!file) return sendJson(res, 400, { ok: false, error: '缺少 path 参数' });
+      return sendJson(res, 200, { ok: true, ...service.readSource(file) });
+    }
     if (method === 'GET' && route === 'serial') {
       return sendJson(res, 200, { ok: true, serial: service.serialState() });
     }
