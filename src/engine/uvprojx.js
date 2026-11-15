@@ -52,6 +52,41 @@ export function parseCpuLine(cpu) {
   };
 }
 
+/**
+ * Parse a Keil scatter-loading file (`.sct`) for the project's REAL load and
+ * execution addresses.
+ *
+ * The `<Cpu>` line only describes the chip's physical memory map — it always
+ * starts IROM at 0x08000000. A project that boots from an IAP bootloader
+ * overrides that with an offset (e.g. `LR_IROM1 0x08010000 0x00100000`), and the
+ * scatter file is the authoritative source for it. Ignoring it links the image
+ * to the wrong base address, which is exactly what a board with a bootloader
+ * cannot boot.
+ */
+export function parseScatterFile(text) {
+  const regions = [];
+  const re = /^\s*([A-Za-z_]\w*)\s+(0x[0-9A-Fa-f]+)\s+(0x[0-9A-Fa-f]+)/;
+  for (const line of String(text ?? '').split(/\r?\n/)) {
+    const code = line.replace(/;.*$/, '');
+    const m = re.exec(code);
+    if (!m) continue;
+    const name = m[1].toUpperCase();
+    const start = Number.parseInt(m[2], 16) >>> 0;
+    const size = Number.parseInt(m[3], 16) >>> 0;
+    if (!size) continue;
+    let kind;
+    if (/IROM/.test(name)) kind = 'rom';
+    else if (/IRAM|XRAM/.test(name)) kind = 'ram';
+    else continue;
+    regions.push({ name, kind, start, size });
+  }
+  return {
+    regions,
+    rom: regions.filter((r) => r.kind === 'rom'),
+    ram: regions.filter((r) => r.kind === 'ram'),
+  };
+}
+
 /** Map an STM32 device name to the OpenOCD target config basename. */
 export function openocdTargetForDevice(device) {
   const name = String(device ?? '').toUpperCase();
@@ -174,10 +209,26 @@ export function readUvprojx(file, targetName) {
   }
 
   const cpu = parseCpuLine(childText(common, 'Cpu'));
+  const scatterFile = ldads ? childText(ldads, 'ScatterFile') : '';
+  const scatterPath = scatterFile ? resolve(projectDir, scatterFile.replace(/\\/g, '/')) : '';
+  let scatter = { regions: [], rom: [], ram: [], path: scatterPath };
+  if (scatterPath) {
+    try {
+      scatter = { ...parseScatterFile(readFileSync(scatterPath, 'utf8')), path: scatterPath };
+    } catch {
+      /* scatter file missing or unreadable — fall back to the <Cpu> line */
+    }
+  }
+  // Effective memory map: the scatter file wins (it carries the real load
+  // address, e.g. an IAP offset of 0x08010000), the <Cpu> line is the fallback.
+  const memory = {
+    rom: scatter.rom.length ? scatter.rom : cpu.rom,
+    ram: scatter.ram.length ? scatter.ram : cpu.ram,
+    source: scatter.rom.length ? 'scatter' : 'cpu',
+  };
   const debuggerInfo = parseDebugOption(targetNode);
   const uac6 = findAll(targetNode, 'uAC6')[0]?.text.trim() === '1';
   const pccUsed = findAll(targetNode, 'pCCUsed')[0]?.text.trim() ?? '';
-  const scatterFile = ldads ? childText(ldads, 'ScatterFile') : '';
   const linkerMisc = ldads ? childText(ldads, 'Misc') : '';
 
   return {
@@ -190,6 +241,8 @@ export function readUvprojx(file, targetName) {
     vendor: childText(common, 'Vendor'),
     pack: childText(common, 'PackID'),
     cpu,
+    memory,
+    scatter,
     output: {
       dir: outputDir,
       dirAbs: outDirAbs,
