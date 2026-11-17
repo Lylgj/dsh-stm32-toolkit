@@ -33,6 +33,7 @@
     "locale",
     "screenshots.json",
     "README.md",
+    "README.en.md",
     "LICENSE"
   ],
   "author": "Lylgj",
