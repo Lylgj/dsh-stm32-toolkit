@@ -1,7 +1,7 @@
 {
   "name": "@lylgj/dsh-stm32-toolkit",
-  "version": "0.1.1",
-  "description": "STM32 IDE for DeepSeek Harness: build, flash, debug, breakpoints, core/peripheral registers, memory and disassembly. Works with Keil MDK (UV4) and the open-source arm-none-eabi + CMake/Make + OpenOCD + GDB toolchain, or SEGGER J-Link natively (JLinkGDBServer + JLink.exe).",
+  "version": "0.1.2",
+  "description": "在 DSH 里编译、下载、调试 STM32：Keil 风格调试窗口、寄存器与内存、反汇编、断点、串口与 RTT，支持 Keil MDK、GCC + OpenOCD 和 J-Link。",
   "keywords": [
     "dsh",
     "dsh-plugin",
